@@ -34,7 +34,7 @@ Kalau folder repo di server ternyata berbeda, pakai folder itu di semua perintah
 - **Hanya satu instance Milo yang boleh aktif.** Kalau Mac dan home server sama-sama menyala, pengingat terkirim
   dua kali dan webhook berebut.
 - **Jangan membuka port ke internet.** Semua lalu lintas lewat Cloudflare Tunnel, dan app hanya listen di
-  `127.0.0.1`.
+  `127.0.0.1`. Service `searxng` (mesin pencari) juga tidak boleh diberi port atau hostname publik.
 - **Jangan ubah pengaturan service `dockerproxy`** (`POST: 0`, socket read-only). Itu yang membuat akses Milo ke
   Docker hanya-baca.
 - **Jangan jalankan `docker compose down -v`**, karena `-v` menghapus database.
@@ -167,6 +167,7 @@ Edit `.env`. Jangan ubah variabel lain tanpa bertanya ke pengguna.
 | `COMPOSE_PROFILES` | `tunnel` setelah langkah 6A, atau tetap `quicktunnel` selama domain belum aktif (6B). |
 | `TUNNEL_TOKEN` | Dari langkah 6A. |
 | `PUBLIC_BASE_URL` | `https://app.secretary.my.id` setelah 6A. Biarkan kosong selama memakai quick tunnel. |
+| `SEARXNG_SECRET` | Kunci internal mesin pencari: `openssl rand -hex 24`. Wajib ada kalau `SEARXNG_URL` diisi. |
 
 Variabel baru yang belum ada di `.env` dari Mac tidak wajib diisi, karena semuanya punya nilai default
 (`deploy.sh` akan menyebutkannya sebagai peringatan). Yang perlu diisi hanya variabel Google di langkah 8.
@@ -364,4 +365,5 @@ diulang.
 | Cek server pengguna: "tidak bisa dibuka; SERVER_KEY_SECRET mungkin berubah" | `SERVER_KEY_SECRET` di `.env` harus sama persis dengan milik Mac. Ambil lagi dari arsip backup (file `env` di dalamnya). |
 | Login Google: `redirect_uri_mismatch` | Redirect URI di Google Cloud harus persis `https://app.secretary.my.id/google/callback`, dan `PUBLIC_BASE_URL` harus `https://app.secretary.my.id`. |
 | Login Google: "Akses diblokir" | Gmail pengguna belum ditambahkan sebagai test user. |
+| Pencarian internet gagal | `docker compose logs searxng --tail 20`. Mesin pencari kadang membatasi; isi `TAVILY_API_KEY` sebagai cadangan, atau kosongkan `SEARXNG_URL` untuk mematikan fitur. |
 | Port bentrok | Ganti `LOCAL_PORT`, lalu `docker compose up -d app`. |

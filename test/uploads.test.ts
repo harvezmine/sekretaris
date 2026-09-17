@@ -9,6 +9,7 @@ import {
   resetSeenBaseUrl,
   uploadUrlFor,
 } from "../src/uploads/links.ts";
+import { isInventedMiloLink, stripInventedLinks } from "../src/agent/linkGuard.ts";
 import { uploadPage } from "../src/uploads/page.ts";
 import { sniffUpload, stagingPath } from "../src/uploads/routes.ts";
 
@@ -65,6 +66,24 @@ describe("upload links", () => {
   test("staging paths only accept generated ids", () => {
     assert.match(stagingPath("upload:0f8fad5b-d9cb-469f-a165-70867728950e"), /uploads\/0f8fad5b-d9cb-469f-a165-70867728950e$/);
     for (const bad of ["upload:../../etc/passwd", "upload:", "upload:0f8fad5b/../x"]) assert.throws(() => stagingPath(bad), bad);
+  });
+
+  test("links to Milo pages the model made up are removed, real ones kept", () => {
+    const base = "https://app.secretary.my.id";
+    const real = `${base}/u/${createUploadToken("21")}`;
+    assert.equal(isInventedMiloLink(real, base), false);
+    assert.equal(isInventedMiloLink(`${base}/u/rafaeljosh18`, base), true);
+    assert.equal(isInventedMiloLink(`${base}/connect/${createUploadToken("21")}`, base), true, "an upload token does not open the Google page");
+    assert.equal(isInventedMiloLink("https://milo.id/u/rafaeljosh18", base), true);
+    assert.equal(isInventedMiloLink("https://www.milo-ai.com/x", base), true);
+    for (const fine of [`${base}/healthz`, "https://wa.me/6281234?text=halo", "https://www.reddit.com/u/milo", "https://docs.google.com/d/1", "https://camilo.dev"]) {
+      assert.equal(isInventedMiloLink(fine, base), false, fine);
+    }
+    const reply = `Kirim lewat link ini ya: https://milo.id/u/rafaeljosh18.\nAtau yang ini: ${real}`;
+    const { text, removed } = stripInventedLinks(reply, base);
+    assert.deepEqual(removed, ["https://milo.id/u/rafaeljosh18"]);
+    assert.equal(text, `Kirim lewat link ini ya: (link itu tidak valid; ketik *FILE* untuk link kirim file atau *KONEKSI* untuk link Google).\nAtau yang ini: ${real}`);
+    assert.deepEqual(stripInventedLinks("tanpa link", base), { text: "tanpa link", removed: [] });
   });
 
   test("the page escapes the assistant name", () => {

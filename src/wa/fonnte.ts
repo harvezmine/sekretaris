@@ -131,6 +131,8 @@ export function parseVCards(text: string): SharedContact[] {
     .filter((c) => c.phones.length || c.emails.length);
 }
 
+const FONNTE_PLACEHOLDER = /^non[- ]?text message$/i;
+
 const str = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 
 /** Fonnte posts one JSON object per incoming message; group messages carry a `member` and are ignored. */
@@ -148,7 +150,11 @@ export function parseFonnteWebhook(body: unknown): InboundMessage[] {
   const timestamp = Number.isFinite(tsRaw) && tsRaw > 0 ? new Date(tsRaw > 1e12 ? tsRaw : tsRaw * 1000) : new Date();
 
   let inbound: Inbound;
-  if (url) {
+  // Without the attachment feature, Fonnte forwards a file or photo as this placeholder text, with no caption.
+  const attachmentDropped = !url && (FONNTE_PLACEHOLDER.test(message.trim()) || Boolean(filename || str(b.extension)));
+  if (attachmentDropped) {
+    inbound = { kind: "unsupported", type: "fonnte-empty" };
+  } else if (url) {
     const mime = MIME[extension];
     const caption = message || undefined;
     if (extension === "vcf") inbound = { kind: "unsupported", type: "vcard-url" };

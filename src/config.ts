@@ -47,6 +47,12 @@ const schema = z
     MESSAGE_SEND_DAILY_LIMIT: z.coerce.number().int().min(0).max(500).default(20),
     RELAY_REPLY_HOURS: z.coerce.number().int().min(1).max(720).default(72),
 
+    /** Self-hosted SearXNG; empty turns web search off unless Tavily is configured. */
+    SEARXNG_URL: z.string().default(""),
+    TAVILY_API_KEY: z.string().default(""),
+    WEB_SEARCH_MAX_RESULTS: z.coerce.number().int().min(1).max(20).default(6),
+    WEB_READ_MAX_CHARS: z.coerce.number().int().min(1000).max(50_000).default(12_000),
+
     GOOGLE_CLIENT_ID: z.string().default(""),
     GOOGLE_CLIENT_SECRET: z.string().default(""),
     /** Override when Google must call back somewhere other than PUBLIC_BASE_URL/google/callback. */

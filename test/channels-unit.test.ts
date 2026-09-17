@@ -101,6 +101,16 @@ test("Fonnte webhooks are normalized; group messages are ignored", () => {
   assert.deepEqual(voice.inbound, { kind: "audio", mediaId: "https://f.example/v.ogg", mime: "audio/ogg", voice: true });
   const photo = parseFonnteWebhook({ sender: "62812", message: "", url: "https://f.example/p.jpg", extension: "jpg" })[0]!;
   assert.equal(photo.inbound.kind, "image");
+
+  for (const dropped of [
+    { sender: "62812", message: "non-text message" },
+    { sender: "62812", message: "Non text message " },
+    { sender: "62812", message: "", filename: "kontrak.pdf" },
+    { sender: "62812", message: "" },
+  ]) {
+    assert.deepEqual(parseFonnteWebhook(dropped)[0]!.inbound, { kind: "unsupported", type: "fonnte-empty" }, JSON.stringify(dropped));
+  }
+  assert.equal(parseFonnteWebhook({ sender: "62812", message: "ini bukan non-text message" })[0]!.inbound.kind, "text");
 });
 
 test("contact cards shared as vCard text become contacts", () => {

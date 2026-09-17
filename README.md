@@ -92,6 +92,18 @@ bersifat statis, tapi tetap dicatat di percakapan supaya AI tahu konteksnya.
 Ringkasan pagi dikirim scheduler sekali sehari pada jam pilihan pengguna, berisi pengingat hari itu. Kalau
 terlambat lebih dari 3 jam (misalnya app sempat mati), ringkasan hari itu dilewati.
 
+### Pencarian internet (SearXNG sendiri)
+
+Service `searxng` di `docker-compose.yml` adalah mesin pencari milik sendiri: tidak membuka port ke luar, dan
+hanya dipanggil oleh Milo. Dengan itu, AI punya dua tool: `web_search` (cari, dapat judul, alamat, cuplikan) dan
+`web_read` (buka satu halaman jadi teks, HTML maupun PDF). Prompt mengarahkan AI memakainya untuk hal yang
+berubah-ubah (berita, harga, kurs, jadwal) dan menyebut sumbernya.
+
+Pengamanan: halaman diambil oleh server Milo, jadi hanya alamat publik yang boleh dibuka (IP privat ditolak,
+termasuk setelah pengalihan), ukuran dan waktu dibatasi, dan isi halaman diperlakukan sebagai data, bukan
+perintah. Kosongkan `SEARXNG_URL` untuk mematikan. `TAVILY_API_KEY` opsional sebagai cadangan kalau SearXNG
+gagal atau kosong.
+
 ### Google: Kalender, Gmail, Drive
 
 Pengguna menghubungkan akun Google-nya dari langkah terakhir perkenalan, dari **MENU → Koneksi akun**, atau lewat
@@ -257,7 +269,7 @@ src/
   profile/            profil pengguna, agenda hari ini, ringkasan pagi
   google/             login Google (OAuth + PKCE), Kalender, Gmail, Drive, halaman koneksi
   actions/            aksi yang menunggu tombol konfirmasi (kirim email, undangan, hapus acara)
-  web/                tampilan bersama halaman web (unggah file, koneksi Google)
+  web/                halaman web bersama, HTML ke teks, pencarian internet (SearXNG/Tavily)
   servers/            cek server hanya-baca: server pengguna (kunci terenkripsi), servers.json, SSH, Docker API
   cli.ts, smoke.ts    alat baris perintah dan uji API sungguhan
 ```

@@ -27,6 +27,8 @@ services:
       PORT: "3000"
       # Kosongkan (DOCKER_PROXY_URL= di .env) untuk mematikan cek host Milo lewat Docker.
       DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://dockerproxy:2375}
+      # Kosongkan (SEARXNG_URL= di .env) untuk mematikan pencarian internet.
+      SEARXNG_URL: ${SEARXNG_URL-http://searxng:8080}
       SERVERS_FILE: /app/servers/servers.json
     volumes:
       - appdata:/app/data
@@ -38,12 +40,31 @@ services:
         condition: service_healthy
       dockerproxy:
         condition: service_started
+      searxng:
+        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # Mesin pencari sendiri untuk tool web_search. Tidak membuka port ke luar: hanya app yang memanggilnya.
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-ganti-lewat-SEARXNG_SECRET}
+      SEARXNG_LIMITER: "false"
+      SEARXNG_PORT: "8080"
+      SEARXNG_BIND_ADDRESS: 0.0.0.0
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+    logging:
+      options: { max-size: "1m", max-file: "1" }
 
   # Hanya-baca: Milo bisa melihat container, log dan pemakaian di mesin ini, tapi tidak bisa menjalankan,
   # menghentikan atau mengubah apa pun (semua request selain GET ditolak). Tidak membuka port ke luar.

@@ -1,0 +1,23 @@
+# SearXNG untuk Milo. Hanya dipakai dari dalam jaringan Docker (tool web_search),
+# tidak dibuka ke internet. Dokumentasi: https://docs.searxng.org/admin/settings/
+use_default_settings: true
+
+server:
+  # Diambil dari SEARXNG_SECRET di .env; nilai di bawah hanya cadangan.
+  secret_key: "ganti-lewat-SEARXNG_SECRET"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # json wajib ada: itu yang dibaca Milo.
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "id"
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 10.0

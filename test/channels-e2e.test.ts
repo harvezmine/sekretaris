@@ -133,17 +133,24 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
     test("files Fonnte does not forward get an upload link, and uploads are read like attachments", async () => {
       const u = "6282200000011";
       const user = await readyUser(u);
-      await fonnte(u, "");
+      const turnsBeforeDrop = agentTurns.length;
+      await fonnte(u, "non-text message");
       const missing = last(u)!.text!;
-      assert.match(missing, /filenya tidak sampai ke saya lewat WhatsApp/);
+      assert.match(missing, /dikirim langsung di WhatsApp belum bisa saya terima di nomor ini, termasuk keterangannya/);
       assert.match(missing, /https:\/\/milo-uji\.trycloudflare\.com\/u\/\S+/, "link built from the host the webhook came in on");
+      assert.equal(agentTurns.length, turnsBeforeDrop, "Fonnte's placeholder never reaches the model");
+      const noted = await sql<{ content: string }[]>`
+        select t.content::text as content from transcript t join sessions s on s.id = t.session_id
+        where s.user_id = ${user.id} order by t.id
+      `;
+      assert.match(noted[0]!.content, /tidak sampai\. Link unggah sudah dikirim/, "the model is told what happened");
 
       await fonnte(u, "FILE");
       const linkText = last(u)!.text!;
       const url = /https:\/\/milo-uji\.trycloudflare\.com(\/u\/\S+)/.exec(linkText)![1]!;
       assert.match(linkText, /berlaku 24 jam/);
       const transcript = await sql`select t.role from transcript t join sessions s on s.id = t.session_id where s.user_id = ${user.id}`;
-      assert.equal(transcript.length, 2, "the link is recorded so the model knows it was given");
+      assert.equal(transcript.length, 4, "the link is recorded so the model knows it was given");
 
       const page = await ctx.app.inject({ url });
       assert.equal(page.statusCode, 200);

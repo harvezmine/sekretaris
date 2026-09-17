@@ -135,8 +135,10 @@ export function uploadLink(url: string | undefined, hours: number): string {
 
 export function attachmentMissing(url: string | undefined): string {
   return [
-    "Sepertinya Anda mengirim file, tapi filenya tidak sampai ke saya lewat WhatsApp.",
-    url ? `Silakan kirim lewat link ini:\n${url}` : "Ketik *FILE* untuk mendapatkan link pengiriman file.",
+    "📎 File, foto, atau pesan suara yang dikirim langsung di WhatsApp belum bisa saya terima di nomor ini, termasuk keterangannya.",
+    url
+      ? `Kirim lewat link ini, dan tulis pertanyaannya (misalnya _tolong rangkum_) di kolom yang tersedia:\n${url}\n\n_Link pribadi, berlaku ${config.UPLOAD_LINK_HOURS} jam._`
+      : "Ketik *FILE* untuk mendapatkan link pengiriman file.",
   ].join("\n\n");
 }
 

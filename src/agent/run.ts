@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 import { sql, type UserRow } from "../db/index.js";
 import type { Logger } from "../util.js";
+import { stripInventedLinks } from "./linkGuard.js";
 import { billedAttempts, llmCostUsd, priceKnown } from "./pricing.js";
 import { CORE_PROMPT, turnHeader } from "./prompt.js";
 import { availableModels, clientFor, pickModel, providerFor, requestExtras, type Provider } from "./providers.js";
@@ -223,11 +224,13 @@ export class Agent {
       where id = ${runId}
     `;
 
-    const reply =
+    const draft =
       texts.at(-1) ||
       (stopReason === "step_limit"
         ? "Maaf, permintaan ini butuh lebih banyak langkah dari yang bisa saya kerjakan sekaligus. Coba pecah jadi beberapa permintaan."
         : "Maaf, saya belum bisa menjawab itu. Coba sampaikan dengan kalimat lain.");
+    const { text: reply, removed } = stripInventedLinks(draft);
+    if (removed.length) this.log.warn({ userId: user.id, runId, removed }, "model mengarang link Milo; dibuang dari balasan");
     return { reply, runId, steps, costUsd };
   }
 }

@@ -530,7 +530,12 @@ export class Pipeline {
           );
           break;
         case "unsupported":
-          replies.push(inbound.type === "fonnte-empty" ? copy.attachmentMissing(uploadUrlFor(user.id)) : copy.TEXT.unsupported);
+          if (inbound.type === "fonnte-empty") {
+            replies.push(copy.attachmentMissing(uploadUrlFor(user.id)));
+            notes.push("[Pengguna mengirim file/foto lewat WhatsApp, tapi file dan keterangannya tidak sampai. Link unggah sudah dikirim.]");
+          } else {
+            replies.push(copy.TEXT.unsupported);
+          }
           break;
       }
     }
