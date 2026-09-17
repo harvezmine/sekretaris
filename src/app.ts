@@ -65,6 +65,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
   const payments = new Payments(deps.paymentProvider ?? createProvider(), outbox, log);
   const agent = deps.agent ?? new Agent(log);
   const pipeline = new Pipeline({ wa: deps.wa, outbox, payments, agent, log });
+  payments.onActivated = (user, message) => pipeline.afterActivation(user, message);
   const debouncer = new Debouncer(
     config.MILO_DEBOUNCE_MS,
     (userId) => pipeline.process(userId),

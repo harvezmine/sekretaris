@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { config } from "../config.js";
 import { getUser, sql, updateUser, type UserRow } from "../db/index.js";
+import { paidActivated } from "../onboarding/copy.js";
 import type { Outbox } from "../wa/outbox.js";
 import { addDays, addMonths, formatDate, formatIdr, type Logger } from "../util.js";
 import { BypassProvider } from "./bypass.js";
@@ -71,6 +72,9 @@ export function paymentCaption(payment: PaymentRow, timeZone: string, sandbox: b
 }
 
 export class Payments {
+  /** Set by the app so a new subscriber goes through the same welcome as a new trial. */
+  onActivated?: (user: UserRow, message: string) => Promise<void>;
+
   constructor(
     readonly provider: PaymentProvider,
     private readonly outbox: Outbox,
@@ -227,11 +231,9 @@ export class Payments {
     });
     await sql`update reminders set status = 'cancelled' where user_id = ${user.id} and kind = 'trial_nudge' and status = 'scheduled'`;
     this.log.info({ userId: user.id, plan: payment.plan, orderId: payment.orderId }, "pembayaran diterima");
-    await this.outbox.text(
-      updated,
-      `✅ Pembayaran diterima. *${PLAN_LABEL[payment.plan]}* aktif sampai *${formatDate(periodEndsAt, updated.timezone)}*.\n\n` +
-        "Kirim apa saja ke sini — pertanyaan, dokumen, foto, atau pesan suara.",
-    );
+    const message = paidActivated(PLAN_LABEL[payment.plan], periodEndsAt, updated.timezone);
+    if (this.onActivated) await this.onActivated(updated, message);
+    else await this.outbox.text(updated, message, { raw: true });
     return true;
   }
 

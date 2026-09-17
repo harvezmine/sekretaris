@@ -76,6 +76,22 @@ Tanpa domain, pakai **quick tunnel**: `COMPOSE_PROFILES=quicktunnel` → `docker
 6. Disarankan: lindungi `https://milo.domainmu.com/admin*` dengan **Cloudflare Access** (Zero Trust → Access →
    Applications → Self-hosted), selain `ADMIN_TOKEN`.
 
+### Perkenalan, menu cepat, dan ringkasan pagi
+
+Setelah masa coba atau langganan aktif, Milo mengajukan 5 pertanyaan tanpa memanggil AI: panggilan, pekerjaan,
+kepribadian dan nama asisten, panjang jawaban, serta jam ringkasan agenda pagi. Semua pertanyaan bisa dilewati.
+Kalau pengguna malah mengirim permintaan, perkenalan dijeda dan permintaannya diproses seperti biasa. Jawaban
+disimpan di `users.profile` dan dikirim ke model di setiap sesi. Model juga bisa mengubahnya lewat
+`profile_update`.
+
+**MENU** membuka menu cepat: daftar interaktif di Meta, daftar bernomor di Fonnte. Isinya agenda hari ini, buat
+pengingat, kirim file, pesan ke orang lain, cek server, ganti gaya, profil, contoh perintah, dan paket. Kata kunci
+**AGENDA**, **GAYA**, **FILE**, **PROFIL**, dan **BANTUAN** langsung membuka menu yang sesuai. Semua jawaban menu
+bersifat statis, tapi tetap dicatat di percakapan supaya AI tahu konteksnya.
+
+Ringkasan pagi dikirim scheduler sekali sehari pada jam pilihan pengguna, berisi pengingat hari itu. Kalau
+terlambat lebih dari 3 jam (misalnya app sempat mati), ringkasan hari itu dilewati.
+
 ### File dan pesan ke orang lain (Fonnte)
 
 Paket Fonnte Free tidak meneruskan lampiran, jadi pengguna mengetik **FILE** untuk mendapatkan link unggah
@@ -226,6 +242,7 @@ src/
   uploads/            link & halaman unggah file (untuk kanal tanpa lampiran)
   relay/              pesan ke orang lain atas nama pengguna, konfirmasi, dan penerusan balasan
   persona/            katalog nama & kepribadian asisten
+  profile/            profil pengguna, agenda hari ini, ringkasan pagi
   servers/            cek server hanya-baca: server pengguna (kunci terenkripsi), servers.json, SSH, Docker API
   cli.ts, smoke.ts    alat baris perintah dan uji API sungguhan
 ```

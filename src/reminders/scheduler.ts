@@ -1,8 +1,9 @@
 import { config } from "../config.js";
 import { getUser, sql, type UserRow } from "../db/index.js";
 import { BTN, trialNudge } from "../onboarding/copy.js";
+import { hasAccess, type Payments } from "../payments/service.js";
+import { briefingText, localNow } from "../profile/agenda.js";
 import { WhatsAppError } from "../wa/client.js";
-import type { Payments } from "../payments/service.js";
 import type { Outbox } from "../wa/outbox.js";
 import { errorMessage, type Logger } from "../util.js";
 
@@ -59,10 +60,46 @@ export class Scheduler {
         returning id, user_id, kind, text, fire_at
       `;
       for (const r of due) await this.deliver(r);
+      await this.sendBriefings();
     } catch (err) {
       this.log.error({ err }, "scheduler gagal");
     } finally {
       this.busy = false;
+    }
+  }
+
+  /**
+   * Morning agenda summaries. Each user gets at most one per local day, claimed before sending; a summary more than
+   * three hours late (the app was down) is skipped rather than sent in the afternoon.
+   */
+  async sendBriefings(now = new Date()): Promise<void> {
+    const candidates = await sql<UserRow[]>`
+      select * from users
+      where profile ? 'briefingTime' and status in ('trialing', 'active') and state <> 'OPTED_OUT'
+      order by id
+      limit 500
+    `;
+    for (const user of candidates) {
+      const at = user.profile.briefingTime;
+      if (!at || !hasAccess(user, now)) continue;
+      const local = localNow(user.timezone, now);
+      if (user.briefingSentOn && user.briefingSentOn.toISOString().slice(0, 10) >= local.date) continue;
+      const [h, m] = at.split(":").map(Number);
+      const [nh, nm] = local.clock.split(":").map(Number);
+      const late = nh! * 60 + nm! - (h! * 60 + m!);
+      if (late < 0) continue;
+      const claimed = await sql`
+        update users set briefing_sent_on = ${local.date}::date
+        where id = ${user.id} and (briefing_sent_on is null or briefing_sent_on < ${local.date}::date)
+        returning id
+      `;
+      if (!claimed.length || late > 180) continue;
+      if (!insideWindow(user, this.outbox.wa.serviceWindow)) continue;
+      try {
+        await this.outbox.text(user, await briefingText(user, now), { raw: true });
+      } catch (err) {
+        this.log.warn({ err, userId: user.id }, "ringkasan pagi gagal dikirim");
+      }
     }
   }
 

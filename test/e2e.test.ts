@@ -3,7 +3,9 @@ import { createHmac } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import { buildApp, type App } from "../src/app.ts";
+import { buildSnapshot } from "../src/agent/prompt.ts";
 import { Agent } from "../src/agent/run.ts";
+import { runTool } from "../src/agent/tools.ts";
 import { getUser, migrate, sql, type UserRow } from "../src/db/index.ts";
 import { createCodes } from "../src/onboarding/codes.ts";
 import { isoInZone } from "../src/util.ts";
@@ -158,8 +160,10 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, code!.code.toLowerCase())]);
     const user = (await userByWa(u))!;
     assert.equal(user.status, "trialing");
-    assert.equal(user.state, "READY");
-    assert.match(lastOut(u)!.text!, /Masa coba \*14 hari\* aktif/);
+    assert.equal(user.state, "SETUP", "a new trial starts with getting to know the user");
+    const [started, firstQuestion] = outFor(u).slice(-2);
+    assert.match(started!.text!, /Masa coba \*14 hari\* aktif/);
+    assert.match(firstQuestion!.text!, /1\/5.+Mau saya panggil apa/s);
     const nudges = await sql`select fire_at from reminders where user_id = ${user.id} and kind = 'trial_nudge'`;
     assert.equal(nudges.length, 1);
 
@@ -187,12 +191,13 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal((await userByWa(u))!.state, "AWAITING_PAYMENT");
 
     await waitFor(async () => (await userByWa(u))!.status === "active");
+    await waitFor(async () => outFor(u).some((e) => /Mau saya panggil apa/.test(e.text ?? "")));
     const user = (await userByWa(u))!;
     assert.equal(user.plan, "profesional");
-    assert.equal(user.state, "READY");
+    assert.equal(user.state, "SETUP", "a new subscriber gets the same getting-to-know-you as a trial");
     const days = (user.periodEndsAt!.getTime() - Date.now()) / 86_400_000;
     assert.ok(days > 27 && days < 32, `period ~1 month, got ${days}`);
-    await waitFor(async () => /Pembayaran diterima/.test(lastOut(u)?.text ?? ""));
+    assert.ok(outFor(u).some((e) => /Pembayaran diterima\. \*Profesional\* aktif/.test(e.text ?? "")));
 
     const [payment] = await sql<{ providerRef: string; status: string }[]>`select provider_ref, status from payments where user_id = ${user.id}`;
     assert.equal(payment!.status, "paid");
@@ -205,8 +210,11 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, code!.code)]);
     assert.ok(outFor(u).some((e) => /Harga Pendiri\* diterima/.test(e.text ?? "")));
     await waitFor(async () => (await userByWa(u))!.status === "active");
+    await waitFor(async () => (await userByWa(u))!.state === "SETUP");
+    await send(u, [text(u, "selesai")]);
     const user = (await userByWa(u))!;
     assert.equal(user.plan, "pendiri");
+    assert.equal(user.state, "READY");
 
     await send(u, [button(u, "subscribe")]);
     const rows = await sql<{ amountIdr: number; plan: string }[]>`select amount_idr, plan from payments where user_id = ${user.id} order by id`;
@@ -313,6 +321,195 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, "GAYA"), text(u, "nomor 11 ya")]);
     assert.equal(agentCalls.length, 1);
     assert.equal(agentCalls[0]!.text, "nomor 11 ya");
+  });
+
+  const startTrial = async (u: string) => {
+    const [code] = await createCodes({ kind: "trial", count: 1, maxUses: 1, trialDays: 14, expiresInDays: 30, source: "uji" });
+    await send(u, [text(u, "halo")]);
+    await send(u, [text(u, code!.code)]);
+  };
+
+  test("a new trial gets to know the user without the model, and the answers shape the profile", async () => {
+    const u = "6281100000032";
+    await startTrial(u);
+    agentCalls.length = 0;
+
+    let q = lastOut(u)!;
+    assert.equal(q.type, "buttons");
+    assert.match(q.text!, /\*1\/5\* · Mau saya panggil apa/);
+    assert.deepEqual(q.buttons!.map((b) => b.id), ["setup:call:name", "setup:call:bos", "setup:skip"]);
+    assert.equal(q.buttons![0]!.title, "Josh");
+
+    await send(u, [text(u, "Pak Josh")]);
+    assert.match(lastOut(u)!.text!, /\*2\/5\* · Apa usaha atau pekerjaan/);
+    await send(u, [text(u, "punya 3 cabang kedai kopi")]);
+    q = lastOut(u)!;
+    assert.equal(q.type, "text");
+    assert.match(q.text!, /\*3\/5\* · Pilih kepribadian/);
+    assert.match(q.text!, /\n11\. \*Anime Kawaii\*/);
+
+    await send(u, [text(u, "angka 20")]);
+    assert.match(lastOut(u)!.text!, /Balas dengan angka 1–14/);
+    await send(u, [text(u, "11")]);
+    q = lastOut(u)!;
+    assert.match(q.text!, /Nama yang cocok untuk gaya ini: \*Yuki\*/);
+    assert.deepEqual(q.buttons!.map((b) => b.title), ["Nama: Yuki", "Tetap Milo"]);
+    await send(u, [button(u, "setup:name:suggested")]);
+    assert.match(lastOut(u)!.text!, /\*4\/5\* · Suka jawaban seperti apa/);
+    await send(u, [button(u, "setup:style:singkat")]);
+    assert.match(lastOut(u)!.text!, /\*5\/5\* · Mau saya kirimi \*ringkasan agenda setiap pagi\*/);
+    await send(u, [text(u, "jam 6.30")]);
+
+    const [done, menu] = outFor(u).slice(-2);
+    assert.match(done!.text!, /Beres, kita sudah kenalan/);
+    assert.match(done!.text!, /Panggilan: Pak Josh\n• Pekerjaan\/usaha: punya 3 cabang kedai kopi\n• Asisten: \*Yuki\*, gaya Anime Kawaii\n• Jawaban: singkat & padat\n• Ringkasan agenda pagi: jam 06\.30/);
+    assert.equal(menu!.type, "list");
+    assert.match(menu!.text!, /^Hai Pak Josh, ada yang bisa Yuki bantu\?/);
+    assert.equal(menu!.buttons![0]!.id, "qa:agenda");
+
+    const user = (await userByWa(u))!;
+    assert.equal(user.state, "READY");
+    assert.equal(user.persona, "anime-kawaii");
+    assert.equal(user.assistantName, "Yuki");
+    const { setupDoneAt, ...profile } = user.profile;
+    assert.ok(setupDoneAt);
+    assert.deepEqual(profile, { callName: "Pak Josh", work: "punya 3 cabang kedai kopi", answerStyle: "singkat", briefingTime: "06:30" });
+    assert.equal(agentCalls.length, 0, "the whole introduction is scripted");
+  });
+
+  test("setup pauses for a real request, can be skipped, and restarts from the profile", async () => {
+    const u = "6281100000033";
+    await startTrial(u);
+    agentCalls.length = 0;
+
+    await send(u, [text(u, "lewati")]);
+    assert.match(lastOut(u)!.text!, /\*2\/5\*/);
+    await send(u, [text(u, "ingetin besok jam 9 rapat vendor")]);
+    assert.deepEqual(agentCalls.map((c) => c.text), ["ingetin besok jam 9 rapat vendor"]);
+    assert.ok(outFor(u).some((e) => /perkenalannya saya jeda/.test(e.text ?? "")));
+    let user = (await userByWa(u))!;
+    assert.equal(user.state, "READY");
+    assert.equal(user.profile.setupDoneAt, undefined);
+
+    await send(u, [text(u, "profil")]);
+    const [summary, restart] = outFor(u).slice(-2);
+    assert.match(summary!.text!, /Profil Anda\*\n• Panggilan: _belum diatur_/);
+    assert.deepEqual(restart!.buttons!.map((b) => b.id), ["setup:restart"]);
+
+    await send(u, [button(u, "setup:restart")]);
+    assert.equal((await userByWa(u))!.state, "SETUP");
+    assert.match(lastOut(u)!.text!, /\*1\/5\*/);
+    await send(u, [text(u, "Bu Rina")]);
+    await send(u, [text(u, "selesai")]);
+    user = (await userByWa(u))!;
+    assert.equal(user.state, "READY");
+    assert.equal(user.profile.callName, "Bu Rina");
+    assert.ok(user.profile.setupDoneAt);
+    assert.equal(agentCalls.length, 1);
+
+    await send(u, [button(u, "setup:skip")]);
+    assert.equal(lastOut(u)!.type, "list", "an old setup button after setup just opens the menu");
+  });
+
+  test("quick actions answer without the model and stay in the conversation", async () => {
+    const u = "6281100000034";
+    const user = await makeReadyUser(u);
+    await sql`update users set profile = ${sql.json({ callName: "Pak Budi" })} where id = ${user.id}`;
+    const today = isoInZone(new Date(), "Asia/Jakarta").slice(0, 10);
+    const tomorrow = isoInZone(new Date(Date.now() + 86_400_000), "Asia/Jakarta").slice(0, 10);
+    await sql`
+      insert into reminders (user_id, kind, text, fire_at, status) values
+        (${user.id}, 'user', 'Rapat vendor', ${new Date(`${today}T23:59:00+07:00`)}, 'scheduled'),
+        (${user.id}, 'user', 'Batal ini', ${new Date(`${today}T23:58:00+07:00`)}, 'cancelled'),
+        (${user.id}, 'user', 'Bayar gaji', ${new Date(`${tomorrow}T08:00:00+07:00`)}, 'scheduled')
+    `;
+    agentCalls.length = 0;
+
+    await send(u, [text(u, "MENU")]);
+    const menu = lastOut(u)!;
+    assert.equal(menu.type, "list");
+    assert.match(menu.text!, /^Hai Pak Budi, ada yang bisa Milo bantu\?/);
+    assert.deepEqual(
+      menu.buttons!.map((b) => b.id),
+      ["qa:agenda", "qa:reminder", "qa:file", "qa:message", "qa:style", "qa:profile", "qa:help", "qa:account"],
+    );
+
+    await send(u, [button(u, "qa:agenda")]);
+    const agenda = lastOut(u)!.text!;
+    assert.match(agenda, /📅 \*Agenda hari ini\*/);
+    assert.match(agenda, /• 23\.59 — Rapat vendor/);
+    assert.doesNotMatch(agenda, /Batal ini/);
+    assert.match(agenda, /\*Besok:\* 1 agenda, pertama jam 08\.00 — Bayar gaji/);
+    await send(u, [text(u, "jadwal hari ini")]);
+    assert.match(lastOut(u)!.text!, /Agenda hari ini/);
+    await send(u, [button(u, "qa:reminder")]);
+    assert.match(lastOut(u)!.text!, /Mau diingatkan apa, dan kapan/);
+    await send(u, [button(u, "qa:help")]);
+    assert.match(lastOut(u)!.text!, /Contoh yang bisa Anda minta/);
+    await send(u, [button(u, "qa:style")]);
+    assert.match(lastOut(u)!.text!, /Atur nama & gaya asisten Anda/);
+    await send(u, [button(u, "qa:account")]);
+    assert.deepEqual(lastOut(u)!.buttons!.map((b) => b.id), ["subscribe", "price", "faq"]);
+    assert.equal(agentCalls.length, 0);
+
+    await send(u, [text(u, "tambahkan yang tadi jam 3")]);
+    assert.equal(agentCalls.length, 1);
+    const [{ n }] = await sql<{ n: number }[]>`
+      select count(*)::int as n from transcript t join sessions s on s.id = t.session_id where s.user_id = ${user.id}
+    `;
+    assert.equal(n, 10, "five static answers recorded so the model knows what the user saw");
+  });
+
+  test("morning summaries go out once a day at the chosen time", async () => {
+    const early = await makeReadyUser("6281100000035");
+    const late = await makeReadyUser("6281100000036");
+    const off = await makeReadyUser("6281100000037");
+    await sql`update users set profile = ${sql.json({ callName: "Pak Andi", briefingTime: "07:00" })}, assistant_name = 'Nadia' where id = ${early.id}`;
+    await sql`update users set profile = ${sql.json({ briefingTime: "08:00" })} where id = ${late.id}`;
+    const day = isoInZone(new Date(), "Asia/Jakarta").slice(0, 10);
+    const at = (clock: string, plusDays = 0) => new Date(new Date(`${day}T${clock}:00+07:00`).getTime() + plusDays * 86_400_000);
+    await sql`insert into reminders (user_id, kind, text, fire_at) values (${early.id}, 'user', 'Presentasi investor', ${at("09:00")})`;
+    const count = (waId: string) => outFor(waId).filter((e) => /Selamat pagi/.test(e.text ?? "")).length;
+
+    await ctx.scheduler.sendBriefings(at("06:55"));
+    assert.equal(count(early.waId), 0);
+    await ctx.scheduler.sendBriefings(at("07:05"));
+    assert.equal(count(early.waId), 1);
+    const msg = lastOut(early.waId)!.text!;
+    assert.match(msg, /^☀️ Selamat pagi, Pak Andi!/);
+    assert.match(msg, /• 09\.00 — Presentasi investor/);
+    assert.match(msg, /— Nadia$/);
+    await ctx.scheduler.sendBriefings(at("07:30"));
+    assert.equal(count(early.waId), 1, "once per day");
+    assert.equal(count(late.waId), 0);
+    await ctx.scheduler.sendBriefings(at("11:30"));
+    assert.equal(count(late.waId), 0, "more than three hours late is skipped, not sent at noon");
+    await ctx.scheduler.sendBriefings(at("07:10", 1));
+    assert.equal(count(early.waId), 2, "the next morning");
+    assert.match(lastOut(early.waId)!.text!, /Hari ini belum ada agenda/);
+    assert.equal(count(off.waId), 0);
+  });
+
+  test("profile_update and fact_forget change what the model is told", async () => {
+    const user = await makeReadyUser("6281100000038");
+    let out = await runTool({ user }, "profile_update", { call_name: "Bu Rina", answer_style: "lengkap", morning_briefing: "6.15" });
+    assert.ok(!out.isError, String(out.content));
+    let fresh = (await userByWa(user.waId))!;
+    assert.deepEqual(fresh.profile, { callName: "Bu Rina", answerStyle: "lengkap", briefingTime: "06:15" });
+    assert.equal((await runTool({ user }, "profile_update", { morning_briefing: "besok" })).isError, true);
+    assert.equal((await runTool({ user }, "profile_update", { call_name: "<script>" })).isError, true);
+    assert.equal((await runTool({ user }, "profile_update", {})).isError, true);
+    await runTool({ user }, "profile_update", { morning_briefing: "off", answer_style: "standar" });
+    fresh = (await userByWa(user.waId))!;
+    assert.deepEqual(fresh.profile, { callName: "Bu Rina" });
+    assert.match(await buildSnapshot(fresh), /Address the user as: Bu Rina/);
+
+    await sql`insert into facts (user_id, fact) values (${user.id}, 'Tidak minum kopi'), (${user.id}, 'Anak bernama Dita')`;
+    out = await runTool({ user }, "fact_forget", { query: "kopi" });
+    assert.deepEqual(JSON.parse(String(out.content)), { forgotten: ["Tidak minum kopi"] });
+    assert.equal((await runTool({ user }, "fact_forget", { query: "kucing" })).isError, true);
+    const left = await sql<{ fact: string }[]>`select fact from facts where user_id = ${user.id}`;
+    assert.deepEqual(left.map((r) => r.fact), ["Anak bernama Dita"]);
   });
 
   test("expired access falls back to the renewal menu", async () => {

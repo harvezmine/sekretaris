@@ -6,6 +6,8 @@ import { renderMenu } from "./menu.js";
 export interface Button {
   id: string;
   title: string;
+  /** List rows only: a second line under the title. */
+  description?: string;
 }
 
 export interface MediaFile {
@@ -22,6 +24,8 @@ export interface WhatsApp {
   readonly serviceWindow: boolean;
   sendText(to: string, text: string): Promise<string | null>;
   sendButtons(to: string, body: string, buttons: Button[], footer?: string): Promise<string | null>;
+  /** Up to ten choices: a list message on Meta, a numbered menu elsewhere. */
+  sendList(to: string, body: string, label: string, rows: Button[]): Promise<string | null>;
   sendImage(to: string, png: Buffer, caption?: string): Promise<string | null>;
   sendTemplate(to: string, name: string, lang: string, bodyParams: string[]): Promise<string | null>;
   markReadTyping(messageId: string): Promise<void>;
@@ -50,6 +54,16 @@ export function assertButtons(body: string, buttons: Button[]): void {
     if (b.title.length > 20) throw new Error(`WhatsApp: judul tombol >20 karakter: "${b.title}"`);
   }
   if (body.length > 1024) throw new Error("WhatsApp: teks pesan bertombol maksimal 1024 karakter");
+}
+
+export function assertList(body: string, label: string, rows: Button[]): void {
+  if (rows.length < 1 || rows.length > 10) throw new Error("WhatsApp: daftar harus 1–10 baris");
+  if (label.length > 20) throw new Error(`WhatsApp: label daftar >20 karakter: "${label}"`);
+  for (const r of rows) {
+    if (r.title.length > 24) throw new Error(`WhatsApp: judul baris >24 karakter: "${r.title}"`);
+    if ((r.description?.length ?? 0) > 72) throw new Error(`WhatsApp: deskripsi baris >72 karakter: "${r.description}"`);
+  }
+  if (body.length > 4096) throw new Error("WhatsApp: teks daftar maksimal 4096 karakter");
 }
 
 export class CloudApiClient implements WhatsApp {
@@ -101,6 +115,27 @@ export class CloudApiClient implements WhatsApp {
         body: { text: body },
         ...(footer ? { footer: { text: footer } } : {}),
         action: { buttons: buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
+      },
+    });
+  }
+
+  sendList(to: string, body: string, label: string, rows: Button[]) {
+    assertList(body, label, rows);
+    return this.send({
+      to,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body: { text: body },
+        action: {
+          button: label,
+          sections: [
+            {
+              title: label,
+              rows: rows.map((r) => ({ id: r.id, title: r.title, ...(r.description ? { description: r.description } : {}) })),
+            },
+          ],
+        },
       },
     });
   }
@@ -163,7 +198,7 @@ export class CloudApiClient implements WhatsApp {
 
 export interface DryRunEntry {
   to: string;
-  type: "text" | "buttons" | "image" | "template" | "read";
+  type: "text" | "buttons" | "list" | "image" | "template" | "read";
   text?: string;
   buttons?: Button[];
   template?: string;
@@ -207,6 +242,12 @@ export class DryRunClient implements WhatsApp {
     assertButtons(body, buttons);
     if (!this.supportsButtons) return this.record({ to, type: "text", text: renderMenu(body, buttons), buttons });
     return this.record({ to, type: "buttons", text: body, buttons });
+  }
+
+  async sendList(to: string, body: string, label: string, rows: Button[]) {
+    assertList(body, label, rows);
+    if (!this.supportsButtons) return this.record({ to, type: "text", text: renderMenu(body, rows), buttons: rows });
+    return this.record({ to, type: "list", text: body, buttons: rows });
   }
 
   async sendImage(to: string, png: Buffer, caption?: string) {

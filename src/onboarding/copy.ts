@@ -19,20 +19,20 @@ export const MENU_NEW: Button[] = [BTN.code, BTN.price, BTN.faq];
 export const MENU_RETURNING: Button[] = [BTN.subscribe, BTN.code, BTN.faq];
 export const MENU_PRICING: Button[] = [BTN.subscribe, BTN.executive, BTN.code];
 
+/** Sent with reply buttons, so it must stay within WhatsApp's 1024-character limit. */
 export function welcome(name: string | null): string {
   const hello = name ? `Halo ${name} 👋` : "Halo 👋";
   return [
-    `${hello} Saya *Milo*, asisten pribadi Anda di WhatsApp.`,
+    `${hello} Saya *Milo*, asisten pribadi Anda di WhatsApp. Cukup chat seperti ke sekretaris, saya yang urus.`,
     "",
-    "Yang bisa saya kerjakan:",
-    "• Menyimpan dokumen, foto, dan pesan suara — lalu menjawab isinya",
-    "• Mengingatkan janji dan tenggat",
-    "• Menyusun pesan untuk orang lain",
-    "• Mengingat hal-hal penting tentang Anda",
-    ...(config.SERVER_ACCESS === "all" ? ["• Mengecek kondisi server dan log aplikasi Anda"] : []),
-    "• Nama dan gaya bicara saya bisa Anda atur sendiri",
+    "📅 *Agenda & pengingat*: \"ingetin besok jam 9 telepon Pak Andi\", plus ringkasan agenda tiap pagi",
+    `📄 *Dokumen & foto*: ${directAttachments() ? "kirim" : "unggah"} PDF atau foto, lalu tanya isinya`,
+    "✉️ *Pesan ke orang lain*: saya susunkan dengan rapi",
+    "🧠 *Ingat hal penting*: klien, preferensi, kebiasaan Anda",
+    "🎭 *Asisten sesuai selera*: nama dan kepribadian pilihan Anda, dari formal sampai gaya anime",
+    ...(config.SERVER_ACCESS === "all" ? ["🖥️ *Cek server*: kondisi server dan error aplikasi"] : []),
     "",
-    "Kirim apa saja ke sini, saya yang urus sisanya.",
+    `${directAttachments() ? "Ketik atau kirim pesan suara" : "Ketik saja permintaan Anda"} kapan saja. Ketik *MENU* untuk pilihan cepat.`,
     "",
     "_Dengan melanjutkan, Anda setuju Milo menyimpan nomor dan percakapan ini. Ketik HAPUS kapan saja untuk menghapus data Anda._",
   ].join("\n");
@@ -138,17 +138,88 @@ export function attachmentMissing(url: string | undefined): string {
 }
 
 export function trialStarted(days: number, endsAt: Date, timeZone: string): string {
+  return `✅ Masa coba *${days} hari* aktif sampai *${formatDate(endsAt, timeZone)}*.`;
+}
+
+export function paidActivated(planLabel: string, until: Date, timeZone: string): string {
+  return `✅ Pembayaran diterima. *${planLabel}* aktif sampai *${formatDate(until, timeZone)}*.`;
+}
+
+// ---- getting to know the user -----------------------------------------------------------------------------------------
+
+export const SETUP_STEPS = 5;
+
+export const SETUP = {
+  intro:
+    "Supaya bantuan saya pas untuk Anda, kita kenalan dulu, ya: *5 pertanyaan singkat*. Setiap pertanyaan bisa dilewati (ketik *lewati*), dan semuanya bisa diubah nanti.",
+  callName: (hasName: boolean) =>
+    `*1/${SETUP_STEPS}* · Mau saya panggil apa?\nContoh: _Pak Josh_, _Bu Rina_, _Kak Dimas_, atau _Bos_.${hasName ? "" : " Ketik saja panggilannya."}`,
+  work: `*2/${SETUP_STEPS}* · Apa usaha atau pekerjaan Anda?\nContoh: _punya 3 cabang kedai kopi_, _direktur kontraktor_, _dokter gigi_. Ini membantu saya memahami konteks permintaan Anda.`,
+  personaIntro: `*3/${SETUP_STEPS}* · Pilih kepribadian asisten Anda. Balas dengan *angka*, atau *lewati* untuk gaya standar.`,
+  assistantName: (suggested: string | undefined) =>
+    `Mau kasih saya nama?${suggested ? ` Nama yang cocok untuk gaya ini: *${suggested}*.` : ""} Ketik nama pilihan Anda, atau pilih di bawah.`,
+  answerStyle: `*4/${SETUP_STEPS}* · Suka jawaban seperti apa?`,
+  briefing: `*5/${SETUP_STEPS}* · Mau saya kirimi *ringkasan agenda setiap pagi*?\nPilih di bawah, atau ketik jam lain, misalnya _06.30_.`,
+  retryCallName: "Panggilan itu terlalu panjang atau berisi simbol. Coba yang singkat, misalnya _Pak Josh_, atau ketik *lewati*.",
+  retryWork: "Tolong ceritakan singkat saja (maksimal 200 huruf), atau ketik *lewati*.",
+  retryPersona: "Balas dengan angka 1–14, atau ketik *lewati*.",
+  retryAssistantName: "Nama itu belum bisa dipakai. Pakai huruf dan angka saja (maks. 30), atau pilih di bawah.",
+  retryBriefing: "Jam itu belum saya pahami. Ketik misalnya _07.00_, atau pilih di bawah.",
+  paused: "Oke, perkenalannya saya jeda dulu. Lanjutkan kapan saja lewat *MENU* → Profil.",
+};
+
+export const SETUP_BTN = {
+  skip: { id: "setup:skip", title: "Lewati" },
+  callBos: { id: "setup:call:bos", title: "Bos" },
+  keepMilo: { id: "setup:name:keep", title: "Tetap Milo" },
+  styleShort: { id: "setup:style:singkat", title: "Singkat & padat" },
+  styleLong: { id: "setup:style:lengkap", title: "Lengkap & detail" },
+  briefing7: { id: "setup:brief:07:00", title: "Ya, jam 07.00" },
+  briefing8: { id: "setup:brief:08:00", title: "Ya, jam 08.00" },
+  briefingOff: { id: "setup:brief:off", title: "Tidak usah" },
+  restart: { id: "setup:restart", title: "Atur ulang profil" },
+} satisfies Record<string, Button>;
+
+export function setupDone(lines: string[]): string {
+  return ["🎉 Beres, kita sudah kenalan! Ini yang saya catat:", ...lines, "", "Ubah kapan saja lewat *MENU* → Profil, atau cukup bilang ke saya."].join("\n");
+}
+
+// ---- quick actions ------------------------------------------------------------------------------------------------------
+
+export function quickMenuIntro(assistantName: string, who: string | undefined): string {
+  return `Hai${who ? ` ${who}` : ""}, ada yang bisa ${assistantName} bantu? Pilih di bawah, atau langsung ketik/ucapkan permintaan Anda.`;
+}
+
+export const QUICK_PROMPTS = {
+  reminder: "⏰ Mau diingatkan apa, dan kapan?\nContoh: _ingetin besok jam 9 telepon Pak Andi_, atau _30 menit lagi angkat jemuran_.",
+  message: "✉️ Mau kirim pesan ke siapa, dan isinya apa?\nContoh: _kabari Pak Andi 0812-xxxx, rapat jadi jam 3_. Bagikan kartu kontaknya kalau belum tersimpan.",
+  server: "🖥️ Mau cek apa di server?\nContoh: _server saya aman?_, _ada error apa di aplikasi saya?_, atau _hubungkan server saya: user@alamat-ip port 22_.",
+};
+
+export function helpText(opts: { attachments: boolean; messaging: boolean; servers: boolean }): string {
   return [
-    `✅ Masa coba *${days} hari* aktif sampai *${formatDate(endsAt, timeZone)}*.`,
+    "💡 *Contoh yang bisa Anda minta*",
     "",
-    "Silakan langsung coba, misalnya:",
-    directAttachments()
-      ? "• Kirim PDF, lalu tanya \"poin pentingnya apa?\""
-      : "• Ketik *FILE* untuk mengirim PDF atau foto, lalu tanya \"poin pentingnya apa?\"",
-    "• \"Ingetin saya besok jam 9 telepon Pak Andi\"",
-    ...(directAttachments() ? ["• Kirim pesan suara sambil jalan"] : []),
-    "• Bagikan kartu kontak, lalu \"ini PM saya\"",
-    "• Ketik *GAYA* untuk memberi saya nama dan kepribadian pilihan Anda",
+    "*Agenda & pengingat*",
+    "• _ingetin besok jam 9 rapat dengan vendor_",
+    "• _agenda saya hari ini apa?_",
+    "• _batalkan pengingat rapat vendor_",
+    "",
+    "*Dokumen & catatan*",
+    opts.attachments ? "• kirim PDF/foto, lalu _poin pentingnya apa?_" : "• ketik *FILE*, unggah PDF/foto, lalu _poin pentingnya apa?_",
+    "• _cari kontrak vendor B yang kemarin_",
+    "• _catat: omzet cabang Kemang bulan ini 120 juta_",
+    "",
+    "*Orang & pesan*",
+    "• bagikan kartu kontak, lalu _ini PM saya_",
+    opts.messaging ? "• _kabari PM saya, laporan dikirim besok_ (saya kirim setelah Anda setujui)" : "• _buatkan pesan ke PM saya, laporan dikirim besok_",
+    "",
+    "*Tentang Anda*",
+    "• _panggil saya Pak Josh_ · _jawab lebih singkat_",
+    "• _ringkasan pagi jam 6_ · _ingat: saya tidak minum kopi_",
+    ...(opts.servers ? ["", "*Server*", "• _server saya aman?_ · _cek error aplikasi saya_"] : []),
+    "",
+    "Kata kunci: *MENU* pilihan cepat · *GAYA* ganti kepribadian · *FILE* kirim file · *HAPUS* hapus data · *STOP* berhenti",
   ].join("\n");
 }
 

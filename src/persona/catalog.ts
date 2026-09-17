@@ -185,17 +185,24 @@ export function normalizeAssistantName(raw: string): string | undefined {
   return ASSISTANT_NAME.test(name) ? name : undefined;
 }
 
-export function personaMenu(currentName: string, current: Persona | undefined): string {
+/** Both genders, numbered 1–14, each with a one-line example of the voice. */
+export function personaChoices(): string[] {
   const line = (p: Persona) => `${p.number}. *${p.label}* — ${p.tagline}\n    _"${p.sample}"_`;
   return [
-    "🎭 *Atur nama & gaya asisten Anda*",
-    `Sekarang: *${currentName}*, gaya ${current ? `*${current.label}* (${current.gender})` : "*standar*"}`,
-    "",
     "*Cowok*",
     ...PERSONAS.filter((p) => p.gender === "cowok").map(line),
     "",
     "*Cewek*",
     ...PERSONAS.filter((p) => p.gender === "cewek").map(line),
+  ];
+}
+
+export function personaMenu(currentName: string, current: Persona | undefined): string {
+  return [
+    "🎭 *Atur nama & gaya asisten Anda*",
+    `Sekarang: *${currentName}*, gaya ${current ? `*${current.label}* (${current.gender})` : "*standar*"}`,
+    "",
+    ...personaChoices(),
     "",
     "Balas misalnya: *nomor 11, namanya Yuki*",
     "Nama boleh apa saja. Untuk kembali ke gaya awal, balas *gaya standar*.",

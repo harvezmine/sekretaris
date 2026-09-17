@@ -24,6 +24,7 @@ import {
 import { formatDate, formatDateTime, normalizePhone, waMeLink } from "../util.js";
 import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../relay/service.js";
 import { uploadUrlFor } from "../uploads/links.js";
+import { normalizeCallName, normalizeWork, parseClock, updateProfile } from "../profile/profile.js";
 import { closeSessions } from "./session.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -38,135 +39,162 @@ export interface ToolOutcome {
   isError?: boolean;
 }
 
+const byName = (a: BetaTool, b: BetaTool) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
 /** Sorted by name and never varied per request: tools render first in the prompt, so any change here misses the cache. */
-export const TOOL_DEFS: BetaTool[] = [
-  {
-    name: "account_status",
-    description: "Get the user's Milo plan, until when it is active, and how much of this period's fair-use allowance is used.",
-    input_schema: { type: "object", properties: {} },
-  },
-  {
-    name: "capture_read",
-    description:
-      "Read a saved file or note by id. Text is returned in slices: pass offset to continue. For photos, the image itself is returned so you can look at it.",
-    input_schema: {
-      type: "object",
-      properties: {
-        id: { type: "integer", description: "Capture id, e.g. 12 for #12." },
-        offset: { type: "integer", description: "Character offset to start from. Default 0." },
-        max_chars: { type: "integer", description: "Characters to return, 500–30000. Default 8000." },
-      },
-      required: ["id"],
+export const TOOL_DEFS: BetaTool[] = (
+  [
+    {
+      name: "account_status",
+      description: "Get the user's Milo plan, until when it is active, and how much of this period's fair-use allowance is used.",
+      input_schema: { type: "object", properties: {} },
     },
-  },
-  {
-    name: "capture_search",
-    description:
-      "Search the documents, photos, voice-note transcripts and forwarded texts the user has sent. Returns ids, titles and matching snippets. An empty query lists the most recent items.",
-    input_schema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Keywords in the language of the document. May be empty." },
-        limit: { type: "integer", description: "1–10. Default 5." },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "contact_find",
-    description: "Find people the user has saved, by name, nickname/role (e.g. 'PM') or phone number.",
-    input_schema: {
-      type: "object",
-      properties: { query: { type: "string" } },
-      required: ["query"],
-    },
-  },
-  {
-    name: "contact_save",
-    description:
-      "Save or update a person in the user's contacts. Use alias for how the user refers to them (e.g. 'PM', 'istri', 'Pak Direktur'). Phone numbers may be in 08xx or +62 form.",
-    input_schema: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        phone: { type: "string" },
-        alias: { type: "string" },
-        email: { type: "string" },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "fact_remember",
-    description: "Remember a durable fact about the user or their work for future conversations. One fact per call, in one sentence.",
-    input_schema: {
-      type: "object",
-      properties: { fact: { type: "string" } },
-      required: ["fact"],
-    },
-  },
-  {
-    name: "message_draft",
-    description:
-      "Create a tap-to-send WhatsApp link for a message the user will send themselves to another person. Give contact_id or phone; with neither, the user picks the recipient when they tap.",
-    input_schema: {
-      type: "object",
-      properties: {
-        text: { type: "string", description: "The message, written in the user's own voice." },
-        contact_id: { type: "integer" },
-        phone: { type: "string" },
-      },
-      required: ["text"],
-    },
-  },
-  {
-    name: "persona_set",
-    description: [
-      "Change your own name and/or personality when the user asks, e.g. after they reply to the GAYA menu (\"nomor 11, namanya Yuki\") or say \"ganti nama kamu jadi Sari\". Give only what they want to change; the other stays as is. persona=standar returns to the standard style.",
-      "When the user asks what styles exist, suggest typing GAYA to see the full menu with examples.",
-      `Menu numbers (number · id · label · gender · suggested name):\n${PERSONAS.map((p) => `${p.number} · ${p.id} · ${p.label} · ${p.gender} · ${p.suggestedName}`).join("\n")}`,
-    ].join("\n\n"),
-    input_schema: {
-      type: "object",
-      properties: {
-        persona: { type: "string", enum: [STANDARD_PERSONA_ID, ...PERSONAS.map((p) => p.id)] },
-        name: { type: "string", description: "The name the user gives you, up to 30 characters." },
+    {
+      name: "capture_read",
+      description:
+        "Read a saved file or note by id. Text is returned in slices: pass offset to continue. For photos, the image itself is returned so you can look at it.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "integer", description: "Capture id, e.g. 12 for #12." },
+          offset: { type: "integer", description: "Character offset to start from. Default 0." },
+          max_chars: { type: "integer", description: "Characters to return, 500–30000. Default 8000." },
+        },
+        required: ["id"],
       },
     },
-  },
-  {
-    name: "reminder_cancel",
-    description: "Cancel a scheduled reminder by id.",
-    input_schema: {
-      type: "object",
-      properties: { id: { type: "integer" } },
-      required: ["id"],
-    },
-  },
-  {
-    name: "reminder_create",
-    description: "Schedule a WhatsApp reminder for the user.",
-    input_schema: {
-      type: "object",
-      properties: {
-        text: { type: "string", description: "What to remind the user about, phrased as the reminder they will read." },
-        at: { type: "string", description: "ISO 8601 timestamp with UTC offset, e.g. 2026-09-18T09:00:00+07:00." },
+    {
+      name: "capture_search",
+      description:
+        "Search the documents, photos, voice-note transcripts and forwarded texts the user has sent. Returns ids, titles and matching snippets. An empty query lists the most recent items.",
+      input_schema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Keywords in the language of the document. May be empty." },
+          limit: { type: "integer", description: "1–10. Default 5." },
+        },
+        required: ["query"],
       },
-      required: ["text", "at"],
     },
-  },
-  {
-    name: "reminder_list",
-    description: "List the user's upcoming reminders.",
-    input_schema: { type: "object", properties: {} },
-  },
-  {
-    name: "upload_link",
-    description:
-      "Get the user's private link for sending files (PDF, Word, text, photos, voice recordings) through the browser; files sent there are saved like files sent in chat and you are told when they arrive. Files and voice notes sent inside this WhatsApp chat may not reach you, so give this link whenever the user wants to send a file, or mentions a file or photo you have not received. Send the link as plain text. The user can also type FILE to get it.",
-    input_schema: { type: "object", properties: {} },
-  },
-];
+    {
+      name: "contact_find",
+      description: "Find people the user has saved, by name, nickname/role (e.g. 'PM') or phone number.",
+      input_schema: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+      },
+    },
+    {
+      name: "contact_save",
+      description:
+        "Save or update a person in the user's contacts. Use alias for how the user refers to them (e.g. 'PM', 'istri', 'Pak Direktur'). Phone numbers may be in 08xx or +62 form.",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          phone: { type: "string" },
+          alias: { type: "string" },
+          email: { type: "string" },
+        },
+        required: ["name"],
+      },
+    },
+    {
+      name: "fact_remember",
+      description: "Remember a durable fact about the user or their work for future conversations. One fact per call, in one sentence.",
+      input_schema: {
+        type: "object",
+        properties: { fact: { type: "string" } },
+        required: ["fact"],
+      },
+    },
+    {
+      name: "fact_forget",
+      description: "Forget remembered facts when the user asks. Deletes the facts containing the given words and returns what was removed.",
+      input_schema: {
+        type: "object",
+        properties: { query: { type: "string", description: "Words that appear in the fact to forget." } },
+        required: ["query"],
+      },
+    },
+    {
+      name: "message_draft",
+      description:
+        "Create a tap-to-send WhatsApp link for a message the user will send themselves to another person. Give contact_id or phone; with neither, the user picks the recipient when they tap.",
+      input_schema: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The message, written in the user's own voice." },
+          contact_id: { type: "integer" },
+          phone: { type: "string" },
+        },
+        required: ["text"],
+      },
+    },
+    {
+      name: "persona_set",
+      description: [
+        "Change your own name and/or personality when the user asks, e.g. after they reply to the GAYA menu (\"nomor 11, namanya Yuki\") or say \"ganti nama kamu jadi Sari\". Give only what they want to change; the other stays as is. persona=standar returns to the standard style.",
+        "When the user asks what styles exist, suggest typing GAYA to see the full menu with examples.",
+        `Menu numbers (number · id · label · gender · suggested name):\n${PERSONAS.map((p) => `${p.number} · ${p.id} · ${p.label} · ${p.gender} · ${p.suggestedName}`).join("\n")}`,
+      ].join("\n\n"),
+      input_schema: {
+        type: "object",
+        properties: {
+          persona: { type: "string", enum: [STANDARD_PERSONA_ID, ...PERSONAS.map((p) => p.id)] },
+          name: { type: "string", description: "The name the user gives you, up to 30 characters." },
+        },
+      },
+    },
+    {
+      name: "profile_update",
+      description:
+        "Save how the user wants you to work with them. Give only the fields they changed. answer_style: singkat, lengkap, or standar to clear. morning_briefing: HH:MM in their time zone for a daily agenda summary, or off. The change applies from your next reply; confirm it briefly.",
+      input_schema: {
+        type: "object",
+        properties: {
+          call_name: { type: "string", description: "How to address the user, e.g. Pak Josh, Bu Rina, Bos." },
+          work: { type: "string", description: "Their business or job, in their words." },
+          answer_style: { type: "string", enum: ["singkat", "lengkap", "standar"] },
+          morning_briefing: { type: "string", description: "HH:MM, or off." },
+        },
+      },
+    },
+    {
+      name: "reminder_cancel",
+      description: "Cancel a scheduled reminder by id.",
+      input_schema: {
+        type: "object",
+        properties: { id: { type: "integer" } },
+        required: ["id"],
+      },
+    },
+    {
+      name: "reminder_create",
+      description: "Schedule a WhatsApp reminder for the user.",
+      input_schema: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "What to remind the user about, phrased as the reminder they will read." },
+          at: { type: "string", description: "ISO 8601 timestamp with UTC offset, e.g. 2026-09-18T09:00:00+07:00." },
+        },
+        required: ["text", "at"],
+      },
+    },
+    {
+      name: "reminder_list",
+      description: "List the user's upcoming reminders.",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
+      name: "upload_link",
+      description:
+        "Get the user's private link for sending files (PDF, Word, text, photos, voice recordings) through the browser; files sent there are saved like files sent in chat and you are told when they arrive. Files and voice notes sent inside this WhatsApp chat may not reach you, so give this link whenever the user wants to send a file, or mentions a file or photo you have not received. Send the link as plain text. The user can also type FILE to get it.",
+      input_schema: { type: "object", properties: {} },
+    },
+  ] satisfies BetaTool[]
+).sort(byName);
 
 const SERVER_NAME_HINT = "Short name: lowercase letters, digits and dashes (e.g. toko, vps-kantor).";
 
@@ -265,9 +293,7 @@ export function toolsFor(user: UserRow): BetaTool[] {
   const key = `${servers ? "s" : ""}${messaging ? "m" : ""}`;
   let tools = toolSets.get(key);
   if (!tools) {
-    tools = [...TOOL_DEFS, ...(servers ? SERVER_TOOL_DEFS : []), ...(messaging ? [MESSAGE_SEND_TOOL_DEF] : [])].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+    tools = [...TOOL_DEFS, ...(servers ? SERVER_TOOL_DEFS : []), ...(messaging ? [MESSAGE_SEND_TOOL_DEF] : [])].sort(byName);
     toolSets.set(key, tools);
   }
   return tools;
@@ -312,6 +338,13 @@ const inputs = {
     email: z.string().max(200).optional(),
   }),
   fact_remember: z.object({ fact: z.string().min(3).max(300) }),
+  fact_forget: z.object({ query: z.string().min(2).max(100) }),
+  profile_update: z.object({
+    call_name: z.string().max(60).optional(),
+    work: z.string().max(300).optional(),
+    answer_style: z.enum(["singkat", "lengkap", "standar"]).optional(),
+    morning_briefing: z.string().max(20).optional(),
+  }),
   message_send: z.object({
     text: z.string().min(1).max(1500),
     contact_id: z.coerce.number().int().positive().optional(),
@@ -527,6 +560,47 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
         and id not in (select id from facts where user_id = ${user.id} order by id desc limit 200)
     `;
     return ok("Tersimpan.");
+  },
+
+  async fact_forget({ user }, { query }) {
+    const like = `%${query.trim().replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+    const removed = await sql<{ fact: string }[]>`
+      delete from facts where id in (
+        select id from facts where user_id = ${user.id} and fact ilike ${like} order by id desc limit 10
+      )
+      returning fact
+    `;
+    if (!removed.length) return fail(`Tidak ada fakta tersimpan yang memuat "${query}".`);
+    await closeSessions(user.id);
+    return ok({ forgotten: removed.map((r) => r.fact) });
+  },
+
+  async profile_update({ user }, input) {
+    const patch: Parameters<typeof updateProfile>[1] = {};
+    if (input.call_name !== undefined) {
+      const callName = normalizeCallName(input.call_name);
+      if (!callName) return fail("Panggilan harus singkat (maks. 4 kata, 40 huruf) tanpa simbol.");
+      patch.callName = callName;
+    }
+    if (input.work !== undefined) {
+      const work = normalizeWork(input.work);
+      if (!work) return fail("Keterangan pekerjaan harus 2–200 huruf.");
+      patch.work = work;
+    }
+    if (input.answer_style) patch.answerStyle = input.answer_style === "standar" ? null : input.answer_style;
+    if (input.morning_briefing !== undefined) {
+      if (/^(off|mati|tidak|stop)$/i.test(input.morning_briefing.trim())) {
+        patch.briefingTime = null;
+      } else {
+        const time = parseClock(input.morning_briefing);
+        if (!time) return fail("Jam ringkasan pagi harus berformat HH:MM, misalnya 07:00, atau off.");
+        patch.briefingTime = time;
+      }
+    }
+    if (!Object.keys(patch).length) return fail("Tidak ada yang diubah.");
+    const profile = await updateProfile(user.id, patch);
+    await closeSessions(user.id);
+    return ok({ saved: profile, note: "Berlaku mulai balasan berikutnya." });
   },
 
   async message_draft({ user }, { text, contact_id, phone }) {

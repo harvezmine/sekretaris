@@ -90,10 +90,16 @@ export async function draftRelay(
   return row!;
 }
 
-export async function pendingDraftSince(ownerId: string, since: Date): Promise<RelayRow | undefined> {
+/** Taken before a model turn; drafts with a higher id were created during that turn. Ids avoid app/database clock skew. */
+export async function lastRelayId(ownerId: string): Promise<string> {
+  const [row] = await sql<{ id: string }[]>`select coalesce(max(id), 0)::text as id from relay_messages where owner_id = ${ownerId}`;
+  return row?.id ?? "0";
+}
+
+export async function pendingDraftAfter(ownerId: string, afterId: string): Promise<RelayRow | undefined> {
   const [row] = await sql<RelayRow[]>`
     select * from relay_messages
-    where owner_id = ${ownerId} and status = 'pending' and created_at >= ${since} and expires_at > now()
+    where owner_id = ${ownerId} and status = 'pending' and id > ${afterId} and expires_at > now()
     order by id desc limit 1
   `;
   return row;

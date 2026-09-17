@@ -139,6 +139,8 @@ alter table payments add column if not exists payment_url text;
 alter table payments add column if not exists checked_at timestamptz;
 
 alter table users add column if not exists assistant_name text;
+alter table users add column if not exists profile jsonb not null default '{}'::jsonb;
+alter table users add column if not exists briefing_sent_on date;
 alter table users add column if not exists persona text;
 alter table sessions add column if not exists closed_at timestamptz;
 

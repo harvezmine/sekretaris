@@ -30,6 +30,11 @@ export class Outbox {
     await record(user.id, wamid, "interactive", body, { buttons });
   }
 
+  async list(user: Recipient, body: string, label: string, rows: Button[]): Promise<void> {
+    const wamid = await this.wa.sendList(user.waId, body, label, rows);
+    await record(user.id, wamid, "interactive", body, { buttons: rows });
+  }
+
   async image(user: Recipient, png: Buffer, caption?: string): Promise<void> {
     const wamid = await this.wa.sendImage(user.waId, png, caption);
     await record(user.id, wamid, "image", caption ?? null);

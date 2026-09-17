@@ -277,6 +277,20 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       }
     });
 
+    test("the quick menu is a numbered list, and a number or title opens the action", async () => {
+      const u = "6282200000031";
+      await readyUser(u);
+      await fonnte(u, "menu");
+      const menu = last(u)!;
+      assert.equal(menu.type, "text");
+      assert.match(menu.text!, /Balas dengan angka:\n\*1\.\* 📅 Agenda hari ini — Pengingat hari ini dan besok\n\*2\.\* ⏰ Buat pengingat/);
+      await fonnte(u, "1");
+      assert.match(last(u)!.text!, /Agenda hari ini/);
+      await fonnte(u, "menu");
+      await fonnte(u, "profil saya");
+      assert.match(sentTo(u).at(-2)!.text!, /Profil Anda/);
+    });
+
     test("reminders go out as plain text regardless of the 24-hour window", async () => {
       const [u] = await sql<UserRow[]>`
         insert into users (wa_id, status, plan, state, consent_at, trial_ends_at, last_inbound_at, llm_model)
@@ -398,7 +412,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       const user = (await userByWa(waId))!;
       assert.equal(user.status, "active");
       assert.equal(user.plan, "profesional");
-      assert.match(wa.sent.filter((e) => e.to === waId).at(-1)!.text!, /Pembayaran diterima/);
+      assert.ok(wa.sent.some((e) => e.to === waId && /Pembayaran diterima/.test(e.text ?? "")));
       assert.equal((await callback(payment.providerRef)).statusCode, 200, "a repeated callback is harmless");
     });
 

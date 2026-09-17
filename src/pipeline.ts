@@ -1,12 +1,33 @@
 import { config } from "./config.js";
 import { getUser, sql, updateUser, type UserRow } from "./db/index.js";
 import type { Agent } from "./agent/run.js";
-import { recordStaticExchange } from "./agent/session.js";
+import { closeSessions, recordStaticExchange } from "./agent/session.js";
 import { quotaState } from "./agent/tools.js";
 import { deleteUserMedia, discardInboundMedia, loadInboundMedia, saveMediaCapture, saveTextCapture } from "./capture/ingest.js";
 import { findCode, hasPendiriRedemption, looksLikeCode, redeem } from "./onboarding/codes.js";
 import * as copy from "./onboarding/copy.js";
-import { DEFAULT_ASSISTANT_NAME, findPersona, personaMenu } from "./persona/catalog.js";
+import {
+  assistantNameButtons,
+  callNameButtons,
+  FINISH,
+  helpFor,
+  isSetupStep,
+  keywordAction,
+  looksLikeRequest,
+  nextStep,
+  parseAnswerStyle,
+  parsePersonaChoice,
+  QUICK_ACTIONS,
+  QUICK_MENU_LABEL,
+  quickRows,
+  setupSummary,
+  SKIP,
+  type QuickAction,
+  type SetupStep,
+} from "./onboarding/setup.js";
+import { DEFAULT_ASSISTANT_NAME, findPersona, normalizeAssistantName, personaChoices, personaMenu } from "./persona/catalog.js";
+import { agendaText } from "./profile/agenda.js";
+import { normalizeCallName, normalizeWork, parseClock, profileSummary, updateProfile } from "./profile/profile.js";
 import {
   activeThreadFor,
   assistantLabel,
@@ -16,7 +37,8 @@ import {
   confirmRelay,
   messageSendFor,
   ownerLabel,
-  pendingDraftSince,
+  lastRelayId,
+  pendingDraftAfter,
   recordRelayReply,
   relayButtons,
   takeUnseenReplies,
@@ -38,7 +60,15 @@ export interface PipelineDeps {
   log: Logger;
 }
 
-export type State = "NEW" | "MENU" | "AWAITING_CODE" | "AWAITING_PAYMENT" | "READY" | "CONFIRM_DELETE" | "OPTED_OUT";
+export type State =
+  | "NEW"
+  | "MENU"
+  | "AWAITING_CODE"
+  | "AWAITING_PAYMENT"
+  | "SETUP"
+  | "READY"
+  | "CONFIRM_DELETE"
+  | "OPTED_OUT";
 
 interface PendingMessage {
   id: string;
@@ -47,8 +77,6 @@ interface PendingMessage {
 }
 
 const KEYWORDS = ["STOP", "HAPUS", "MULAI", "MENU"] as const;
-const STYLE_KEYWORD = /^(gaya|persona)$/i;
-const FILE_KEYWORD = /^(file|upload|unggah|kirim file)$/i;
 type Keyword = (typeof KEYWORDS)[number];
 
 async function takePending(userId: string): Promise<PendingMessage[]> {
@@ -140,6 +168,8 @@ export class Pipeline {
         return this.handleCodeText(user, lastOf(batch, "text")?.text);
       case "AWAITING_PAYMENT":
         return this.nudgePayment(user);
+      case "SETUP":
+        return this.handleSetup(user, batch);
       case "CONFIRM_DELETE":
         return this.cancelDelete(user);
       case "READY":
@@ -158,12 +188,7 @@ export class Pipeline {
   private async showMenu(user: UserRow): Promise<void> {
     if (hasAccess(user)) {
       const updated = user.state === "READY" ? user : await updateUser(user.id, { state: "READY", stateData: {} });
-      const until = updated.plan === "trial" ? updated.trialEndsAt : updated.periodEndsAt;
-      await this.d.outbox.buttons(
-        updated,
-        `${copy.accountSummary(updated.plan, until, updated.timezone)}\n\nSilakan lanjut mengirim pesan, atau pilih di bawah.`,
-        [copy.BTN.subscribe, copy.BTN.price, copy.BTN.faq],
-      );
+      await this.showQuickMenu(updated);
       return;
     }
     if (user.state === "NEW") {
@@ -190,6 +215,11 @@ export class Pipeline {
   private async handleButton(user: UserRow, id: string): Promise<void> {
     const relay = /^relay_(send|cancel):(\d+)$/.exec(id);
     if (relay) return this.handleRelayButton(user, relay[1] as "send" | "cancel", relay[2]!);
+    if (id.startsWith("qa:")) {
+      const action = id.slice(3) as QuickAction;
+      if (QUICK_ACTIONS.has(action)) return this.handleQuickAction(user, action);
+    }
+    if (id.startsWith("setup:")) return this.handleSetupButton(user, id.slice(6));
     const consent = user.consentAt ? {} : { consentAt: new Date() };
     switch (id) {
       case copy.BTN.code.id: {
@@ -300,7 +330,7 @@ export class Pipeline {
         values (${user.id}, 'trial_nudge', 'trial_nudge', ${addDays(new Date(), config.TRIAL_NUDGE_DAY)})
       `;
     }
-    await this.d.outbox.text(updated, copy.trialStarted(days, endsAt, updated.timezone), { raw: true });
+    await this.afterActivation(updated, copy.trialStarted(days, endsAt, updated.timezone));
   }
 
   private async startCheckout(user: UserRow): Promise<void> {
@@ -382,10 +412,11 @@ export class Pipeline {
       await this.d.outbox.buttons(updated, copy.accessExpired(endedAt, user.timezone), copy.MENU_RETURNING);
       return;
     }
-    const isKeyword = (m: PendingMessage, re: RegExp) => m.inbound.kind === "text" && re.test(m.inbound.text.trim());
-    if (incoming.some((m) => isKeyword(m, STYLE_KEYWORD))) await this.showPersonaMenu(user);
-    if (incoming.some((m) => isKeyword(m, FILE_KEYWORD))) await this.sendUploadLink(user);
-    const batch = incoming.filter((m) => !isKeyword(m, STYLE_KEYWORD) && !isKeyword(m, FILE_KEYWORD));
+    const actionOf = (m: PendingMessage) => (m.inbound.kind === "text" ? keywordAction(m.inbound.text) : undefined);
+    for (const action of new Set(incoming.map(actionOf))) {
+      if (action) await this.handleQuickAction(user, action);
+    }
+    const batch = incoming.filter((m) => !actionOf(m));
 
     const notes: string[] = [];
     const replies: string[] = [];
@@ -490,7 +521,8 @@ export class Pipeline {
     notes.unshift(...replyNotes);
 
     const softMode = await this.softModeFor(user);
-    const runStarted = new Date();
+    const messaging = messageSendFor(user.waId);
+    const relayMark = messaging ? await lastRelayId(user.id) : "0";
     const slowNotice =
       config.MILO_SLOW_NOTICE_MS >= 0
         ? setTimeout(() => {
@@ -509,8 +541,8 @@ export class Pipeline {
     );
     await this.d.outbox.text(user, result.reply);
 
-    if (messageSendFor(user.waId)) {
-      const draft = await pendingDraftSince(user.id, runStarted);
+    if (messaging) {
+      const draft = await pendingDraftAfter(user.id, relayMark);
       if (draft) await this.askRelayConfirmation(user, draft);
     }
   }
@@ -590,19 +622,216 @@ export class Pipeline {
     this.d.log.info({ ownerId: thread.ownerId, relayId: thread.id }, "balasan pesan diteruskan ke pengguna");
   }
 
-  /** Static, so it costs nothing; recorded in the transcript so the agent understands a reply like "nomor 4". */
-  private async showPersonaMenu(user: UserRow): Promise<void> {
-    const menu = personaMenu(user.assistantName ?? DEFAULT_ASSISTANT_NAME, findPersona(user.persona));
-    await this.d.outbox.text(user, menu, { raw: true });
-    const model = await this.d.agent.modelFor(user).catch(() => null);
-    if (model) await recordStaticExchange(user, model, "GAYA", menu);
+  // ---- quick actions ---------------------------------------------------------------------------------------------------
+
+  private async showQuickMenu(user: UserRow): Promise<void> {
+    const name = user.assistantName ?? DEFAULT_ASSISTANT_NAME;
+    await this.d.outbox.list(user, copy.quickMenuIntro(name, user.profile?.callName), QUICK_MENU_LABEL, quickRows(user));
   }
 
-  private async sendUploadLink(user: UserRow): Promise<void> {
-    const text = copy.uploadLink(uploadUrlFor(user.id), config.UPLOAD_LINK_HOURS);
+  /** Static replies cost nothing; each is recorded so the model understands what the user answers next. */
+  private async replyStatic(user: UserRow, userNote: string, text: string): Promise<void> {
     await this.d.outbox.text(user, text, { raw: true });
     const model = await this.d.agent.modelFor(user).catch(() => null);
-    if (model) await recordStaticExchange(user, model, "FILE", text);
+    if (model) await recordStaticExchange(user, model, userNote, text);
+  }
+
+  private async handleQuickAction(user: UserRow, action: QuickAction): Promise<void> {
+    if (!hasAccess(user)) return this.showMenu(user);
+    const note = `[Menu: ${action}]`;
+    switch (action) {
+      case "agenda":
+        return this.replyStatic(user, note, await agendaText(user));
+      case "reminder":
+        return this.replyStatic(user, note, copy.QUICK_PROMPTS.reminder);
+      case "message":
+        return this.replyStatic(user, note, copy.QUICK_PROMPTS.message);
+      case "server":
+        return this.replyStatic(user, note, copy.QUICK_PROMPTS.server);
+      case "file":
+        return this.replyStatic(user, note, copy.uploadLink(uploadUrlFor(user.id), config.UPLOAD_LINK_HOURS));
+      case "style":
+        return this.replyStatic(user, note, personaMenu(user.assistantName ?? DEFAULT_ASSISTANT_NAME, findPersona(user.persona)));
+      case "help":
+        return this.replyStatic(user, note, helpFor(user));
+      case "profile": {
+        const facts = await sql<{ fact: string }[]>`select fact from facts where user_id = ${user.id} order by id desc limit 30`;
+        await this.replyStatic(user, note, profileSummary(user, facts.map((f) => f.fact)));
+        await this.d.outbox.buttons(user, "Mau mengulang perkenalan dari awal?", [copy.SETUP_BTN.restart]);
+        return;
+      }
+      case "account": {
+        const until = user.plan === "trial" ? user.trialEndsAt : user.periodEndsAt;
+        await this.d.outbox.buttons(user, copy.accountSummary(user.plan, until, user.timezone), [
+          copy.BTN.subscribe,
+          copy.BTN.price,
+          copy.BTN.faq,
+        ]);
+        return;
+      }
+    }
+  }
+
+  // ---- getting to know the user ------------------------------------------------------------------------------------------
+
+  /** Called when access starts, by a trial code here or by a payment in Payments. */
+  async afterActivation(user: UserRow, lead: string): Promise<void> {
+    if (user.profile?.setupDoneAt) {
+      await this.d.outbox.text(user, lead, { raw: true });
+      await this.showQuickMenu(user);
+      return;
+    }
+    await this.startSetup(user, lead);
+  }
+
+  private async startSetup(user: UserRow, lead?: string): Promise<void> {
+    const updated = await updateUser(user.id, { state: "SETUP", stateData: { setupStep: "callName" } });
+    await this.d.outbox.text(updated, [lead, copy.SETUP.intro].filter(Boolean).join("\n\n"), { raw: true });
+    await this.askSetupStep(updated, "callName");
+  }
+
+  private async askSetupStep(user: UserRow, step: SetupStep): Promise<void> {
+    switch (step) {
+      case "callName":
+        return this.d.outbox.buttons(user, copy.SETUP.callName(Boolean(user.displayName)), callNameButtons(user));
+      case "work":
+        return this.d.outbox.buttons(user, copy.SETUP.work, [copy.SETUP_BTN.skip]);
+      case "persona":
+        return this.d.outbox.text(user, [copy.SETUP.personaIntro, "", ...personaChoices()].join("\n"), { raw: true });
+      case "assistantName":
+        return this.d.outbox.buttons(
+          user,
+          copy.SETUP.assistantName(findPersona(user.persona)?.suggestedName),
+          assistantNameButtons(user),
+        );
+      case "answerStyle":
+        return this.d.outbox.buttons(user, copy.SETUP.answerStyle, [
+          copy.SETUP_BTN.styleShort,
+          copy.SETUP_BTN.styleLong,
+          copy.SETUP_BTN.skip,
+        ]);
+      case "briefing":
+        return this.d.outbox.buttons(user, copy.SETUP.briefing, [
+          copy.SETUP_BTN.briefing7,
+          copy.SETUP_BTN.briefing8,
+          copy.SETUP_BTN.briefingOff,
+        ]);
+    }
+  }
+
+  private currentStep(user: UserRow): SetupStep {
+    return isSetupStep(user.stateData.setupStep) ? user.stateData.setupStep : "callName";
+  }
+
+  private async handleSetup(user: UserRow, batch: PendingMessage[]): Promise<void> {
+    if (!hasAccess(user)) return this.handleReady(user, batch);
+    const step = this.currentStep(user);
+    const texts = batch.filter((m) => m.inbound.kind === "text");
+    const answer = texts.length === batch.length ? (lastOf(batch, "text")?.text.trim() ?? "") : "";
+    if (!answer || keywordAction(answer) || looksLikeRequest(answer, step)) {
+      return this.pauseSetup(user, batch);
+    }
+    if (FINISH.test(answer)) return this.finishSetup(user);
+    if (SKIP.test(answer)) return this.advanceSetup(user, step);
+
+    switch (step) {
+      case "callName": {
+        const callName = normalizeCallName(answer);
+        if (!callName) return this.replySetupRetry(user, copy.SETUP.retryCallName);
+        await updateProfile(user.id, { callName });
+        return this.advanceSetup(user, step);
+      }
+      case "work": {
+        const work = normalizeWork(answer);
+        if (!work) return this.replySetupRetry(user, copy.SETUP.retryWork);
+        await updateProfile(user.id, { work });
+        return this.advanceSetup(user, step);
+      }
+      case "persona": {
+        const choice = parsePersonaChoice(answer);
+        if (!choice) return this.replySetupRetry(user, copy.SETUP.retryPersona);
+        await sql`update users set persona = ${choice === "standard" ? null : choice.id}, updated_at = now() where id = ${user.id}`;
+        return this.advanceSetup(user, step);
+      }
+      case "assistantName": {
+        const assistantName = normalizeAssistantName(answer);
+        if (!assistantName) return this.replySetupRetry(user, copy.SETUP.retryAssistantName);
+        await sql`update users set assistant_name = ${assistantName}, updated_at = now() where id = ${user.id}`;
+        return this.advanceSetup(user, step);
+      }
+      case "answerStyle": {
+        const answerStyle = parseAnswerStyle(answer);
+        if (!answerStyle) return this.askSetupStep(user, step);
+        await updateProfile(user.id, { answerStyle });
+        return this.advanceSetup(user, step);
+      }
+      case "briefing": {
+        const briefingTime = parseClock(answer);
+        if (!briefingTime) return this.replySetupRetry(user, copy.SETUP.retryBriefing);
+        await updateProfile(user.id, { briefingTime });
+        return this.advanceSetup(user, step);
+      }
+    }
+  }
+
+  private async replySetupRetry(user: UserRow, text: string): Promise<void> {
+    await this.d.outbox.text(user, text, { raw: true });
+  }
+
+  private async handleSetupButton(user: UserRow, action: string): Promise<void> {
+    if (!hasAccess(user)) return this.showMenu(user);
+    if (action === "restart") return this.startSetup(user);
+    if (user.state !== "SETUP") return this.showQuickMenu(user);
+    const step = this.currentStep(user);
+    if (action === "skip") return this.advanceSetup(user, step);
+
+    const [kind, ...restParts] = action.split(":");
+    const value = restParts.join(":");
+    if (kind === "call" && step === "callName") {
+      const callName = value === "bos" ? "Bos" : user.displayName ? normalizeCallName(user.displayName) : undefined;
+      if (callName) await updateProfile(user.id, { callName });
+      return this.advanceSetup(user, step);
+    }
+    if (kind === "name" && step === "assistantName") {
+      const suggested = findPersona(user.persona)?.suggestedName;
+      if (value === "suggested" && suggested) {
+        await sql`update users set assistant_name = ${suggested}, updated_at = now() where id = ${user.id}`;
+      }
+      return this.advanceSetup(user, step);
+    }
+    if (kind === "style" && step === "answerStyle" && (value === "singkat" || value === "lengkap")) {
+      await updateProfile(user.id, { answerStyle: value });
+      return this.advanceSetup(user, step);
+    }
+    if (kind === "brief" && step === "briefing") {
+      const briefingTime = value === "off" ? null : parseClock(value);
+      if (briefingTime !== undefined) await updateProfile(user.id, { briefingTime });
+      return this.advanceSetup(user, step);
+    }
+    return this.askSetupStep(user, step);
+  }
+
+  private async advanceSetup(user: UserRow, from: SetupStep): Promise<void> {
+    const next = nextStep(from);
+    if (!next) return this.finishSetup(user);
+    const updated = await updateUser(user.id, { stateData: { ...user.stateData, setupStep: next } });
+    await this.askSetupStep(updated, next);
+  }
+
+  private async finishSetup(user: UserRow): Promise<void> {
+    await updateProfile(user.id, { setupDoneAt: new Date().toISOString() });
+    const updated = await updateUser(user.id, { state: "READY", stateData: {} });
+    await closeSessions(user.id);
+    await this.d.outbox.text(updated, copy.setupDone(setupSummary(updated)), { raw: true });
+    await this.showQuickMenu(updated);
+  }
+
+  /** Something other than an answer arrived: stop asking and treat it as a normal message. */
+  private async pauseSetup(user: UserRow, batch: PendingMessage[]): Promise<void> {
+    const updated = await updateUser(user.id, { state: "READY", stateData: {} });
+    await closeSessions(user.id);
+    await this.d.outbox.text(updated, copy.SETUP.paused, { raw: true });
+    await this.handleReady(updated, batch);
   }
 
   private async softModeFor(user: UserRow): Promise<boolean> {

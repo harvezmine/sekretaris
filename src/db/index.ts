@@ -33,7 +33,19 @@ export interface UserRow {
   llmModel: string | null;
   assistantName: string | null;
   persona: string | null;
+  profile: UserProfile;
+  briefingSentOn: Date | null;
   createdAt: Date;
+}
+
+/** What the user told Milo about themselves during setup or later; shapes every reply. */
+export interface UserProfile {
+  callName?: string;
+  work?: string;
+  answerStyle?: "singkat" | "lengkap";
+  /** HH:MM in the user's time zone. */
+  briefingTime?: string;
+  setupDoneAt?: string;
 }
 
 export async function getUser(id: string): Promise<UserRow | undefined> {
