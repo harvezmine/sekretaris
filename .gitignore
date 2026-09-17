@@ -1,10 +1,38 @@
+# --- Dependensi & hasil build ---------------------------------------------------
 node_modules/
 dist/
-data/
-backups/
+*.tsbuildinfo
+coverage/
+
+# --- Rahasia: jangan pernah di-commit ------------------------------------------
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+id_rsa*
+id_ecdsa*
+id_ed25519*
+
+# --- Server milik operator & kunci SSH-nya (contoh tetap di-commit) -----------
+servers/*
+!servers/servers.example.json
+
+# --- Data runtime, backup, log ---------------------------------------------------
+data/
+backups/
+*.tgz
+logs/
 *.log
-servers/servers.json
-servers/keys/
+npm-debug.log*
+
+# --- Sistem operasi & editor -----------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# --- Claude Code: pengaturan lokal pribadi ---------------------------------------
+.claude/settings.local.json
