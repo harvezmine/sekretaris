@@ -212,25 +212,26 @@ misalnya drive terenkripsi. Tanpa `SERVER_KEY_SECRET` dari `.env`, server milik 
 
 ## 10. Update aplikasi di kemudian hari
 
-👤 Pengguna menyalin kode baru dari Mac, **tanpa** menimpa `.env`, `servers/`, dan `backups/` di home server:
+Kode diambil dari GitHub (`origin`). Setelah perubahan di-push, jalankan di home server:
 
 ```bash
-rsync -av --exclude node_modules --exclude dist --exclude backups --exclude .env --exclude servers \
-  ./ USER@HOME-SERVER:~/milo-ai/
+cd /home/sekretaris
+./deploy.sh
 ```
 
-Lalu di home server:
+`deploy.sh` melakukan `git fetch` + fast-forward, `scripts/backup.sh`, `docker compose build app`,
+`docker compose up -d`, lalu menunggu `/healthz` mengembalikan `"ok":true`. Kalau tidak ada commit baru, skrip
+langsung keluar tanpa menyentuh container. Log ada di `deploy.log`.
 
-```bash
-cd ~/milo-ai
-scripts/backup.sh
-docker compose up -d --build app
-docker compose ps
-docker compose logs app --since 2m | grep -E "Milo siap|error"
-```
+- `./deploy.sh --force`: build dan up ulang walaupun tidak ada commit baru (misalnya setelah build gagal).
+- `SKIP_BACKUP=1 ./deploy.sh`: lewati backup (tidak disarankan).
+- Repo privat: salin `.deploy.env.example` ke `.deploy.env`, isi `GIT_TOKEN`, lalu `chmod 600 .deploy.env`.
+- Skrip menolak jalan kalau ada file terlacak yang diubah langsung di server, atau riwayat lokal menyimpang dari
+  `origin`.
 
 Migrasi database berjalan otomatis saat app start. Container `tunnel` tidak perlu dibuat ulang. Untuk quick
-tunnel, jangan membuat ulang `quicktunnel` supaya alamatnya tidak berubah.
+tunnel, skrip memberi peringatan kalau `quicktunnel` ikut dibuat ulang, karena alamatnya berubah dan langkah 6
+harus diulang.
 
 ## Masalah umum
 

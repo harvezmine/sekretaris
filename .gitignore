@@ -36,3 +36,7 @@ Thumbs.db
 
 # --- Claude Code: pengaturan lokal pribadi ---------------------------------------
 .claude/settings.local.json
+
+# --- deploy.sh: token GitHub & lock (contoh tetap di-commit) --------------------
+.deploy.env
+.deploy.lock

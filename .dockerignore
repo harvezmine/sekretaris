@@ -10,3 +10,4 @@ test
 *.log
 servers/servers.json
 servers/keys/
+.deploy.*
