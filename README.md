@@ -76,6 +76,13 @@ Tanpa domain, pakai **quick tunnel**: `COMPOSE_PROFILES=quicktunnel` → `docker
 6. Disarankan: lindungi `https://milo.domainmu.com/admin*` dengan **Cloudflare Access** (Zero Trust → Access →
    Applications → Self-hosted), selain `ADMIN_TOKEN`.
 
+### File dan pesan ke orang lain (Fonnte)
+
+Paket Fonnte Free tidak meneruskan lampiran, jadi pengguna mengetik **FILE** untuk mendapatkan link unggah
+pribadi. File yang diunggah dibaca seperti lampiran biasa. Nomor di `SERVER_ADMIN_NUMBERS` juga bisa menyuruh Milo
+mengirim pesan ke kontaknya: pesan terkirim setelah pengguna menekan **Kirim**, dan balasannya diteruskan balik.
+Lihat [docs/setup-fonnte.md](docs/setup-fonnte.md).
+
 ### Akses server
 
 Dengan `SERVER_ACCESS=all`, setiap pengguna bisa menghubungkan server Linux-nya lewat chat. Milo membuat SSH key
@@ -216,6 +223,9 @@ src/
   voice/              transkripsi pesan suara (API kompatibel OpenAI, default Groq)
   reminders/          pengiriman pengingat & kedaluwarsa QR
   admin/              laporan pemakaian dan rute admin
+  uploads/            link & halaman unggah file (untuk kanal tanpa lampiran)
+  relay/              pesan ke orang lain atas nama pengguna, konfirmasi, dan penerusan balasan
+  persona/            katalog nama & kepribadian asisten
   servers/            cek server hanya-baca: server pengguna (kunci terenkripsi), servers.json, SSH, Docker API
   cli.ts, smoke.ts    alat baris perintah dan uji API sungguhan
 ```

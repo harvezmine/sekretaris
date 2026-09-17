@@ -127,7 +127,8 @@ Di dashboard Cloudflare:
    halaman itu, karena cloudflared sudah berjalan sebagai container.
 3. **Public hostname**: subdomain `milo`, pilih domain, **Type** `HTTP`, **URL** `app:3000`.
 4. Disarankan: **Access → Applications → Self-hosted**, lindungi `milo.DOMAIN/admin*` dengan login email.
-   Jangan lindungi `/fonnte/*`, `/pay/*`, atau `/wa/*`, karena webhook harus bisa masuk.
+   Jangan lindungi `/fonnte/*`, `/pay/*`, `/wa/*`, atau `/u/*`. Webhook harus bisa masuk, dan `/u/*` adalah
+   link unggah file untuk pengguna.
 
 Pengguna mengirim token itu ke Claude Code. Tulis token langsung ke `.env` tanpa menampilkannya lagi, lalu:
 

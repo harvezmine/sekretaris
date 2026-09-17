@@ -9,6 +9,8 @@ import { createProvider, Payments } from "./payments/service.js";
 import type { PaymentProvider } from "./payments/provider.js";
 import { Pipeline } from "./pipeline.js";
 import { Scheduler } from "./reminders/scheduler.js";
+import { rememberPublicHost } from "./uploads/links.js";
+import { uploadRoutes } from "./uploads/routes.js";
 import type { Button, WhatsApp } from "./wa/client.js";
 import { parseFonnteWebhook } from "./wa/fonnte.js";
 import { describeInbound, parseWebhook, type Inbound, type InboundMessage } from "./wa/inbound.js";
@@ -140,6 +142,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
       return reply.code(401).send({ error: "webhook signing is not configured" });
     }
 
+    rememberPublicHost(req.hostname);
     const { messages, statuses } = parseWebhook(req.body);
     for (const s of statuses) {
       if (s.status === "failed") log.warn({ wamid: s.wamid, errors: s.errors }, "pesan keluar gagal terkirim");
@@ -154,6 +157,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
     if (!config.FONNTE_WEBHOOK_SECRET || !safeEqual(secret, config.FONNTE_WEBHOOK_SECRET)) {
       return reply.code(404).send({ error: "not found" });
     }
+    rememberPublicHost(req.hostname);
     await ingest(parseFonnteWebhook(req.body));
     return reply.code(200).send({ ok: true });
   });
@@ -174,6 +178,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
   });
 
   await app.register(adminRoutes, { prefix: "/admin", payments });
+  await app.register(uploadRoutes, { onQueued: (userId) => debouncer.poke(userId, config.MILO_DEBOUNCE_MS) });
 
   return { app, debouncer, payments, scheduler, outbox };
 }

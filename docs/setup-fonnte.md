@@ -31,6 +31,38 @@ curl -s -X POST https://api.fonnte.com/device -H "Authorization: <FONNTE_TOKEN>"
 
 `attachment: false` berarti lampiran belum aktif di paketmu.
 
+### Tanpa paket lampiran: link unggah
+
+Di paket Free, Fonnte tidak meneruskan file, foto, atau pesan suara ke webhook, jadi Milo tidak pernah menerimanya.
+Karena itu, Milo memakai **link unggah pribadi**:
+
+- **Cara membukanya:** pengguna mengetik **FILE** (atau meminta di chat, misalnya "saya mau kirim PDF"). Milo
+  membalas dengan link yang berlaku `UPLOAD_LINK_HOURS` jam.
+- **Isi halaman:** PDF, Word, teks, foto, atau rekaman suara, maksimal `UPLOAD_MAX_MB`, beserta pertanyaan
+  opsional.
+- **Setelah diunggah:** file diproses persis seperti lampiran WhatsApp. Milo menyimpannya, membaca isinya, lalu
+  menjawab di WhatsApp.
+- **Pesan lampiran kosong:** kalau Fonnte mengirim webhook tanpa isi, Milo otomatis membalas dengan link ini.
+- **Alamat link:** diambil dari `PUBLIC_BASE_URL`, atau dari alamat tunnel tempat webhook terakhir masuk.
+
+Setelah upgrade ke paket berlampiran, isi `FONNTE_ATTACHMENTS=true` supaya teks sambutan kembali menyarankan
+kirim file langsung. Link unggah tetap tersedia.
+
+### Mengirim pesan ke orang lain
+
+Dengan `MESSAGE_SEND_ACCESS=admin` (atau `all`), Milo bisa mengirim pesan ke kontak pengguna dari nomor Fonnte.
+
+- **Konfirmasi wajib:** AI hanya menyusun draf. Pesan baru terkirim setelah pengguna membalas **Kirim** (atau
+  angka 1) dalam 15 menit. Pesan itu diberi tanda "— Milo, asisten pribadi <nama>".
+- **Balasan diteruskan:** balasan penerima dalam `RELAY_REPLY_HOURS` jam diteruskan ke pengguna. Penerima tidak
+  mendapat menu pendaftaran, dan diberi ucapan terima kasih sekali.
+- **Batasan:**
+  - maksimal `MESSAGE_SEND_DAILY_LIMIT` pesan per 24 jam;
+  - satu penerima per pesan;
+  - penerima yang pernah mengetik STOP tidak bisa dikirimi.
+- **Risiko:** nomor Fonnte dipakai bersama semua pengguna. WhatsApp bisa memblokir nomor yang sering mengirim ke
+  orang yang tidak pernah chat lebih dulu. Karena itu, fitur ini sebaiknya tetap terbatas.
+
 ## Menyalakan
 
 1. Di `.env`:

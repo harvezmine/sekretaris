@@ -3,16 +3,32 @@ import { getUser, sql, updateUser, type UserRow } from "./db/index.js";
 import type { Agent } from "./agent/run.js";
 import { recordStaticExchange } from "./agent/session.js";
 import { quotaState } from "./agent/tools.js";
-import { deleteUserMedia, saveMediaCapture, saveTextCapture } from "./capture/ingest.js";
+import { deleteUserMedia, discardInboundMedia, loadInboundMedia, saveMediaCapture, saveTextCapture } from "./capture/ingest.js";
 import { findCode, hasPendiriRedemption, looksLikeCode, redeem } from "./onboarding/codes.js";
 import * as copy from "./onboarding/copy.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona, personaMenu } from "./persona/catalog.js";
+import {
+  activeThreadFor,
+  assistantLabel,
+  cancelRelay,
+  composeRelayText,
+  CONFIRM_MINUTES,
+  confirmRelay,
+  messageSendFor,
+  ownerLabel,
+  pendingDraftSince,
+  recordRelayReply,
+  relayButtons,
+  takeUnseenReplies,
+  type RelayRow,
+} from "./relay/service.js";
+import { uploadUrlFor } from "./uploads/links.js";
 import { hasAccess, type Payments } from "./payments/service.js";
 import { sttEnabled, transcribe } from "./voice/transcribe.js";
 import type { WhatsApp } from "./wa/client.js";
 import type { Inbound, SharedContact } from "./wa/inbound.js";
 import type { Outbox } from "./wa/outbox.js";
-import { addDays, errorMessage, formatDate, normalizePhone, type Logger } from "./util.js";
+import { addDays, errorMessage, formatDate, formatDateTime, normalizePhone, type Logger } from "./util.js";
 
 export interface PipelineDeps {
   wa: WhatsApp;
@@ -32,6 +48,7 @@ interface PendingMessage {
 
 const KEYWORDS = ["STOP", "HAPUS", "MULAI", "MENU"] as const;
 const STYLE_KEYWORD = /^(gaya|persona)$/i;
+const FILE_KEYWORD = /^(file|upload|unggah|kirim file)$/i;
 type Keyword = (typeof KEYWORDS)[number];
 
 async function takePending(userId: string): Promise<PendingMessage[]> {
@@ -101,6 +118,11 @@ export class Pipeline {
         return this.showMenu(user);
     }
 
+    if (!user.plan && !user.consentAt && (user.state === "NEW" || user.state === "MENU")) {
+      const thread = await activeThreadFor(user.waId);
+      if (thread) return this.forwardRelayReply(user, thread, batch);
+    }
+
     const button = lastOf(batch, "button");
     if (button) {
       await this.handleButton(user, button.id);
@@ -166,6 +188,8 @@ export class Pipeline {
   }
 
   private async handleButton(user: UserRow, id: string): Promise<void> {
+    const relay = /^relay_(send|cancel):(\d+)$/.exec(id);
+    if (relay) return this.handleRelayButton(user, relay[1] as "send" | "cancel", relay[2]!);
     const consent = user.consentAt ? {} : { consentAt: new Date() };
     switch (id) {
       case copy.BTN.code.id: {
@@ -358,9 +382,10 @@ export class Pipeline {
       await this.d.outbox.buttons(updated, copy.accessExpired(endedAt, user.timezone), copy.MENU_RETURNING);
       return;
     }
-    const isStyleKeyword = (m: PendingMessage) => m.inbound.kind === "text" && STYLE_KEYWORD.test(m.inbound.text.trim());
-    if (incoming.some(isStyleKeyword)) await this.showPersonaMenu(user);
-    const batch = incoming.filter((m) => !isStyleKeyword(m));
+    const isKeyword = (m: PendingMessage, re: RegExp) => m.inbound.kind === "text" && re.test(m.inbound.text.trim());
+    if (incoming.some((m) => isKeyword(m, STYLE_KEYWORD))) await this.showPersonaMenu(user);
+    if (incoming.some((m) => isKeyword(m, FILE_KEYWORD))) await this.sendUploadLink(user);
+    const batch = incoming.filter((m) => !isKeyword(m, STYLE_KEYWORD) && !isKeyword(m, FILE_KEYWORD));
 
     const notes: string[] = [];
     const replies: string[] = [];
@@ -387,6 +412,7 @@ export class Pipeline {
             replies.push(`${icon} Tersimpan: *${capture.title}*${pages} (#${capture.id}).${scan}`);
             if (inbound.caption?.trim()) questions.push(inbound.caption.trim());
           } catch (err) {
+            await discardInboundMedia(inbound.mediaId).catch(() => {});
             this.d.log.warn({ err, userId: user.id }, "gagal menyimpan media");
             replies.push(`Maaf, file itu gagal saya simpan (${errorMessage(err)}).`);
           }
@@ -394,11 +420,13 @@ export class Pipeline {
         }
         case "audio": {
           if (!sttEnabled()) {
+            await discardInboundMedia(inbound.mediaId);
             replies.push(copy.TEXT.voiceDisabled);
             break;
           }
           try {
-            const media = await this.d.wa.downloadMedia(inbound.mediaId, 25 * 1024 * 1024);
+            const media = await loadInboundMedia(this.d.wa, inbound.mediaId, 25 * 1024 * 1024, inbound.mime);
+            await discardInboundMedia(inbound.mediaId);
             const t = await transcribe(media.data, inbound.mime ?? media.mimeType);
             await sql`
               insert into usage_ledger (user_id, kind, model, units, cost_usd)
@@ -437,7 +465,7 @@ export class Pipeline {
           );
           break;
         case "unsupported":
-          replies.push(copy.TEXT.unsupported);
+          replies.push(inbound.type === "fonnte-empty" ? copy.attachmentMissing(uploadUrlFor(user.id)) : copy.TEXT.unsupported);
           break;
       }
     }
@@ -455,7 +483,14 @@ export class Pipeline {
 
     if (replies.length) await this.d.outbox.text(user, [...new Set(replies)].join("\n\n"), { raw: true });
 
+    const replyNotes = (await takeUnseenReplies(user.id)).map(
+      (r) =>
+        `[Balasan dari ${r.contactName ? `${r.contactName} (${r.fromWa})` : r.fromWa}, ${formatDateTime(r.createdAt, user.timezone)}: ${r.body}]`,
+    );
+    notes.unshift(...replyNotes);
+
     const softMode = await this.softModeFor(user);
+    const runStarted = new Date();
     const slowNotice =
       config.MILO_SLOW_NOTICE_MS >= 0
         ? setTimeout(() => {
@@ -473,6 +508,86 @@ export class Pipeline {
       "giliran agent selesai",
     );
     await this.d.outbox.text(user, result.reply);
+
+    if (messageSendFor(user.waId)) {
+      const draft = await pendingDraftSince(user.id, runStarted);
+      if (draft) await this.askRelayConfirmation(user, draft);
+    }
+  }
+
+  // ---- messages to other people --------------------------------------------------------------------------------------
+
+  private async askRelayConfirmation(user: UserRow, draft: RelayRow): Promise<void> {
+    const who = draft.contactName ? `*${draft.contactName}* (${draft.toWa})` : `*${draft.toWa}*`;
+    await this.d.outbox.text(user, composeRelayText(user, draft.body), { raw: true });
+    await this.d.outbox.buttons(user, copy.relayConfirm(who, CONFIRM_MINUTES), relayButtons(draft.id));
+  }
+
+  private async handleRelayButton(user: UserRow, action: "send" | "cancel", id: string): Promise<void> {
+    if (!messageSendFor(user.waId) || !hasAccess(user)) return this.showMenu(user);
+    let reply: string;
+    let note: string;
+    if (action === "cancel") {
+      const row = await cancelRelay(user, id);
+      reply = row ? copy.relayCancelled(row.contactName ?? row.toWa) : copy.TEXT.relayUnavailable;
+      note = `[Pengguna menekan Batal: pesan ${row ? `ke ${row.contactName ?? row.toWa} ` : ""}tidak dikirim]`;
+    } else {
+      const outcome = await confirmRelay(user, id, this.d.wa);
+      const name = outcome.row ? (outcome.row.contactName ?? outcome.row.toWa) : "";
+      if (outcome.status === "sent") {
+        reply = copy.relaySent(name);
+        note = `[Pengguna menekan Kirim: pesan ke ${name} terkirim]`;
+      } else if (outcome.status === "failed") {
+        this.d.log.warn({ userId: user.id, relayId: id, error: outcome.error }, "pesan ke orang lain gagal terkirim");
+        reply = copy.relayFailed(name, outcome.error);
+        note = `[Pengguna menekan Kirim, tapi pesan ke ${name} gagal terkirim: ${outcome.error}]`;
+      } else {
+        reply = outcome.row?.status === "sent" ? copy.TEXT.relayAlreadySent : copy.TEXT.relayUnavailable;
+        note = "[Pengguna menekan tombol konfirmasi yang sudah tidak berlaku]";
+      }
+    }
+    await this.d.outbox.text(user, reply, { raw: true });
+    const model = await this.d.agent.modelFor(user).catch(() => null);
+    if (model) await recordStaticExchange(user, model, note, reply);
+  }
+
+  /** Someone who is not a Milo user answered a message Milo sent for a user: hand it to that user instead of onboarding. */
+  private async forwardRelayReply(sender: UserRow, thread: RelayRow, batch: PendingMessage[]): Promise<void> {
+    const parts = batch.map(({ inbound }) => {
+      switch (inbound.kind) {
+        case "text":
+          return inbound.text.trim();
+        case "button":
+          return inbound.title;
+        case "location":
+          return `[lokasi: ${inbound.latitude}, ${inbound.longitude}]`;
+        case "document":
+        case "image":
+        case "video":
+          return `[mengirim ${inbound.kind === "document" ? "dokumen" : inbound.kind === "image" ? "foto" : "video"}${"caption" in inbound && inbound.caption ? `: ${inbound.caption}` : ""}]`;
+        case "audio":
+          return "[mengirim pesan suara]";
+        case "contacts":
+          return `[membagikan kontak: ${inbound.contacts.map((c) => c.name).join(", ")}]`;
+        default:
+          return "[pesan yang tidak bisa dibaca]";
+      }
+    });
+    for (const { inbound } of batch) {
+      if ("mediaId" in inbound) await discardInboundMedia(inbound.mediaId).catch(() => {});
+    }
+    const body = parts.filter(Boolean).join("\n").slice(0, 3000);
+    if (!body) return;
+    const first = await recordRelayReply(thread, sender.waId, body);
+    const owner = await getUser(thread.ownerId);
+    if (owner && owner.state !== "OPTED_OUT" && hasAccess(owner)) {
+      const name = thread.contactName ?? sender.displayName ?? sender.waId;
+      await this.d.outbox.text(owner, copy.relayReply(name, sender.waId, body), { raw: true });
+    }
+    if (first && owner) {
+      await this.d.outbox.text(sender, copy.relayAck(assistantLabel(owner), ownerLabel(owner)), { raw: true });
+    }
+    this.d.log.info({ ownerId: thread.ownerId, relayId: thread.id }, "balasan pesan diteruskan ke pengguna");
   }
 
   /** Static, so it costs nothing; recorded in the transcript so the agent understands a reply like "nomor 4". */
@@ -481,6 +596,13 @@ export class Pipeline {
     await this.d.outbox.text(user, menu, { raw: true });
     const model = await this.d.agent.modelFor(user).catch(() => null);
     if (model) await recordStaticExchange(user, model, "GAYA", menu);
+  }
+
+  private async sendUploadLink(user: UserRow): Promise<void> {
+    const text = copy.uploadLink(uploadUrlFor(user.id), config.UPLOAD_LINK_HOURS);
+    await this.d.outbox.text(user, text, { raw: true });
+    const model = await this.d.agent.modelFor(user).catch(() => null);
+    if (model) await recordStaticExchange(user, model, "FILE", text);
   }
 
   private async softModeFor(user: UserRow): Promise<boolean> {

@@ -39,6 +39,14 @@ const schema = z
     MILO_DEBOUNCE_MS: z.coerce.number().int().min(0).default(4000),
     MILO_SLOW_NOTICE_MS: z.coerce.number().int().default(8000),
 
+    FONNTE_ATTACHMENTS: z.stringbool().default(false),
+    UPLOAD_MAX_MB: z.coerce.number().int().min(1).max(100).default(25),
+    UPLOAD_LINK_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+
+    MESSAGE_SEND_ACCESS: z.enum(["off", "admin", "all"]).default("admin"),
+    MESSAGE_SEND_DAILY_LIMIT: z.coerce.number().int().min(0).max(500).default(20),
+    RELAY_REPLY_HOURS: z.coerce.number().int().min(1).max(720).default(72),
+
     SERVER_ACCESS: z.enum(["off", "admin", "all"]).default("admin"),
     SERVER_ADMIN_NUMBERS: z.string().default(""),
     SERVER_KEY_SECRET: z.string().default(""),

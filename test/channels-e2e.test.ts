@@ -1,18 +1,32 @@
 import assert from "node:assert/strict";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { Agent } from "../src/agent/run.ts";
+import { runTool, toolsFor } from "../src/agent/tools.ts";
 import { buildApp, type App } from "../src/app.ts";
+import { config } from "../src/config.ts";
 import { migrate, sql, type UserRow } from "../src/db/index.ts";
 import { InstanPayProvider, instanPaySignature } from "../src/payments/instanpay.ts";
+import { resetSeenBaseUrl } from "../src/uploads/links.ts";
 import { DryRunClient } from "../src/wa/client.ts";
+import { tinyPdf } from "./helpers.ts";
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 const SECRET = "fonnte-secret-0123456789";
+const agentTurns: string[] = [];
+/** Stands in for the model: "kirim ke <nomor>: <teks>" calls message_send, everything else is echoed. */
 const fakeAgent = {
   async modelFor() {
     return "deepseek-flash";
   },
-  async run(_u: UserRow, turn: string) {
+  async run(u: UserRow, turn: string) {
+    agentTurns.push(turn);
+    const send = /kirim ke (\S+): (.+)$/s.exec(turn);
+    if (send) {
+      const outcome = await runTool({ user: u }, "message_send", { phone: send[1], text: send[2] });
+      return { reply: `Siap. ${String(outcome.content)}`, runId: "0", steps: 2, costUsd: 0 };
+    }
     return { reply: `Oke: ${turn}`, runId: "0", steps: 1, costUsd: 0 };
   },
 } as unknown as Agent;
@@ -46,14 +60,26 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       const res = await ctx.app.inject({
         method: "POST",
         url: `/fonnte/webhook/${secret}`,
+        headers: { host: "milo-uji.trycloudflare.com" },
         payload: { device: "6280000", sender, name: "Bos", message, timestamp: ++ts, ...extra },
       });
       await ctx.debouncer.drain();
       return res;
     };
     const last = (to: string) => wa.sent.filter((e) => e.to === to && e.type !== "read").at(-1);
+    const sentTo = (to: string) => wa.sent.filter((e) => e.to === to && e.type !== "read");
+    const readyUser = async (waId: string, name = "Josh") => {
+      const [u] = await sql<UserRow[]>`
+        insert into users (wa_id, display_name, status, plan, state, consent_at, trial_ends_at, llm_model)
+        values (${waId}, ${name}, 'trialing', 'trial', 'READY', now(), now() + interval '7 days', 'deepseek-flash')
+        returning *
+      `;
+      return u!;
+    };
 
     before(async () => {
+      config.WA_PROVIDER = "fonnte";
+      resetSeenBaseUrl();
       wa = new DryRunClient(`${process.env.DATA_DIR}/dry-run-fonnte`, () => {}, "fonnte");
       ctx = await buildApp({ wa, agent: fakeAgent, logger: false });
     });
@@ -102,6 +128,153 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       const user = (await userByWa(u))!;
       const [{ n }] = await sql<{ n: string }[]>`select count(*) as n from messages where user_id = ${user.id} and direction = 'in'`;
       assert.equal(Number(n), 1);
+    });
+
+    test("files Fonnte does not forward get an upload link, and uploads are read like attachments", async () => {
+      const u = "6282200000011";
+      const user = await readyUser(u);
+      await fonnte(u, "");
+      const missing = last(u)!.text!;
+      assert.match(missing, /filenya tidak sampai ke saya lewat WhatsApp/);
+      assert.match(missing, /https:\/\/milo-uji\.trycloudflare\.com\/u\/\S+/, "link built from the host the webhook came in on");
+
+      await fonnte(u, "FILE");
+      const linkText = last(u)!.text!;
+      const url = /https:\/\/milo-uji\.trycloudflare\.com(\/u\/\S+)/.exec(linkText)![1]!;
+      assert.match(linkText, /berlaku 24 jam/);
+      const transcript = await sql`select t.role from transcript t join sessions s on s.id = t.session_id where s.user_id = ${user.id}`;
+      assert.equal(transcript.length, 2, "the link is recorded so the model knows it was given");
+
+      const page = await ctx.app.inject({ url });
+      assert.equal(page.statusCode, 200);
+      assert.match(page.body, /Kirim file ke Milo/);
+      assert.equal(page.headers["referrer-policy"], "no-referrer");
+      assert.match(String(page.headers["content-security-policy"]), /default-src 'none'/);
+
+      const upload = (body: Buffer, filename: string, caption = "", target = url) =>
+        ctx.app.inject({
+          method: "POST",
+          url: target,
+          headers: {
+            "content-type": "application/octet-stream",
+            "x-filename": encodeURIComponent(filename),
+            "x-caption": encodeURIComponent(caption),
+          },
+          payload: body,
+        });
+
+      const turnsBefore = agentTurns.length;
+      const res = await upload(tinyPdf("Laba bersih naik 7 persen"), "laporan Q3.pdf", "poin pentingnya apa?");
+      assert.equal(res.statusCode, 200, res.body);
+      await ctx.debouncer.drain();
+      const saved = sentTo(u).at(-2)!.text!;
+      assert.match(saved, /Tersimpan: \*laporan Q3\.pdf\*, 1 hlm/);
+      assert.match(agentTurns.at(-1)!, /^\[Dokumen tersimpan #\d+: laporan Q3\.pdf, 1 hlm\]\npoin pentingnya apa\?$/);
+      assert.equal(agentTurns.length, turnsBefore + 1);
+      const [capture] = await sql<{ textContent: string; filePath: string }[]>`
+        select text_content, file_path from captures where user_id = ${user.id} order by id desc limit 1
+      `;
+      assert.match(capture!.textContent, /Laba bersih naik 7 persen/);
+      assert.match(capture!.filePath, /\.pdf$/);
+      const staged = await readdir(path.join(process.env.DATA_DIR!, "uploads")).catch(() => []);
+      assert.deepEqual(staged, [], "the staged upload is removed once saved");
+
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+      assert.equal((await upload(png, "foto.png")).statusCode, 200);
+      await ctx.debouncer.drain();
+      const [photo] = await sql<{ kind: string; mime: string }[]>`
+        select kind, mime from captures where user_id = ${user.id} order by id desc limit 1
+      `;
+      assert.deepEqual({ ...photo }, { kind: "image", mime: "image/png" });
+
+      assert.equal((await upload(Buffer.from([0x4d, 0x5a, 0x90, 0x00]), "setup.exe")).statusCode, 415);
+      assert.equal((await upload(Buffer.alloc(0), "kosong.pdf")).statusCode, 400);
+      const forged = url.replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+      assert.equal((await upload(tinyPdf("x"), "x.pdf", "", forged)).statusCode, 404);
+      assert.equal((await ctx.app.inject({ url: forged })).statusCode, 404);
+
+      await sql`update users set trial_ends_at = now() - interval '1 day' where id = ${user.id}`;
+      assert.equal((await upload(tinyPdf("x"), "x.pdf")).statusCode, 404, "expired access closes the link");
+    });
+
+    test("messages to other people wait for Kirim, and replies are relayed to the owner", async () => {
+      const owner = "6282200000021";
+      const andi = "6281233334444";
+      const ownerRow = await readyUser(owner, "Josh");
+      const outsider = { ...ownerRow, waId: "6282200000099" };
+      config.SERVER_ADMIN_NUMBERS = owner;
+      try {
+        assert.ok(toolsFor(ownerRow).some((t) => t.name === "message_send"));
+        assert.ok(!toolsFor(outsider).some((t) => t.name === "message_send"));
+        const denied = await runTool({ user: outsider }, "message_send", { phone: andi, text: "x" });
+        assert.equal(denied.isError, true);
+
+        await fonnte(owner, "kirim ke 0812-3333-4444: Halo Pak Andi, saya Milo, asisten Josh. Rapat jadi jam 3 sore.");
+        const [reply, preview, confirm] = sentTo(owner).slice(-3);
+        assert.match(reply!.text!, /menunggu konfirmasi pengguna/);
+        assert.equal(
+          preview!.text,
+          "Halo Pak Andi, saya Milo, asisten Josh. Rapat jadi jam 3 sore.\n\n_— Milo, asisten pribadi Josh. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._",
+        );
+        assert.match(
+          confirm!.text!,
+          /Kirim pesan di atas ke \*6281233334444\*\? Konfirmasi berlaku 15 menit\.\n\nBalas dengan angka:\n\*1\.\* Kirim\n\*2\.\* Batal$/,
+        );
+        assert.equal(sentTo(andi).length, 0, "nothing goes out before the owner confirms");
+
+        await fonnte(owner, "1");
+        assert.equal(sentTo(andi).length, 1);
+        assert.equal(sentTo(andi)[0]!.text, preview!.text);
+        assert.match(last(owner)!.text!, /Terkirim ke \*6281233334444\*/);
+        await sql`insert into messages (user_id, direction, kind, body, payload, processed)
+                  values (${ownerRow.id}, 'out', 'interactive', 'lama', ${sql.json({ buttons: confirm!.buttons } as never)}, true)`;
+        await fonnte(owner, "1");
+        assert.equal(sentTo(andi).length, 1, "tapping an old confirmation again does not send twice");
+        assert.match(last(owner)!.text!, /sudah terkirim sebelumnya/);
+
+        await fonnte(andi, "Siap, saya datang", { name: "Andi" });
+        assert.equal(last(owner)!.text, "💬 *Balasan dari Andi* (6281233334444):\nSiap, saya datang");
+        assert.equal(last(andi)!.text, "Terima kasih, pesan Anda sudah saya teruskan ke Josh. — Milo");
+        assert.equal((await userByWa(andi))!.state, "NEW", "the recipient is not onboarded");
+        await fonnte(andi, "Tolong siapkan proyektor", { name: "Andi" });
+        assert.match(last(owner)!.text!, /Tolong siapkan proyektor/);
+        assert.equal(sentTo(andi).length, 2, "thanked once per thread");
+
+        await fonnte(owner, "apa kata Andi?");
+        assert.match(
+          agentTurns.at(-1)!,
+          /^\[Balasan dari 6281233334444, .+: Siap, saya datang\]\n\[Balasan dari 6281233334444, .+: Tolong siapkan proyektor\]\napa kata Andi\?$/,
+        );
+        await fonnte(owner, "lagi?");
+        assert.doesNotMatch(agentTurns.at(-1)!, /Balasan dari/, "each reply reaches the model once");
+
+        await fonnte(owner, "kirim ke 081233334444: Pak Andi, rapatnya batal.");
+        await fonnte(owner, "batal");
+        assert.match(last(owner)!.text!, /tidak jadi dikirim/);
+        assert.equal(sentTo(andi).length, 2);
+
+        await fonnte(owner, "kirim ke 081233334444: Pak Andi, rapat pindah ke Jumat.");
+        await sql`update relay_messages set expires_at = now() - interval '1 minute' where status = 'pending'`;
+        await fonnte(owner, "kirim");
+        assert.match(last(owner)!.text!, /sudah tidak berlaku/);
+        assert.equal(sentTo(andi).length, 2);
+
+        config.MESSAGE_SEND_DAILY_LIMIT = 1;
+        await fonnte(owner, "kirim ke 081233334444: satu lagi");
+        assert.match(last(owner)!.text!, /Batas 1 pesan/);
+        config.MESSAGE_SEND_DAILY_LIMIT = 20;
+
+        await fonnte(andi, "STOP", { name: "Andi" });
+        await fonnte(owner, "kirim ke 081233334444: halo lagi");
+        assert.match(last(owner)!.text!, /tidak dikirimi pesan lagi/);
+
+        const stranger = "6281255556666";
+        await fonnte(stranger, "halo");
+        assert.match(last(stranger)!.text!, /Halo Bos/, "people Milo never messaged still get the welcome");
+      } finally {
+        config.SERVER_ADMIN_NUMBERS = "";
+        config.MESSAGE_SEND_DAILY_LIMIT = 20;
+      }
     });
 
     test("reminders go out as plain text regardless of the 24-hour window", async () => {

@@ -22,6 +22,8 @@ import {
   summarizeServers,
 } from "../servers/userServers.js";
 import { formatDate, formatDateTime, normalizePhone, waMeLink } from "../util.js";
+import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../relay/service.js";
+import { uploadUrlFor } from "../uploads/links.js";
 import { closeSessions } from "./session.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -158,6 +160,12 @@ export const TOOL_DEFS: BetaTool[] = [
     description: "List the user's upcoming reminders.",
     input_schema: { type: "object", properties: {} },
   },
+  {
+    name: "upload_link",
+    description:
+      "Get the user's private link for sending files (PDF, Word, text, photos, voice recordings) through the browser; files sent there are saved like files sent in chat and you are told when they arrive. Files and voice notes sent inside this WhatsApp chat may not reach you, so give this link whenever the user wants to send a file, or mentions a file or photo you have not received. Send the link as plain text. The user can also type FILE to get it.",
+    input_schema: { type: "object", properties: {} },
+  },
 ];
 
 const SERVER_NAME_HINT = "Short name: lowercase letters, digits and dashes (e.g. toko, vps-kantor).";
@@ -228,12 +236,61 @@ export const SERVER_TOOL_DEFS: BetaTool[] = [
   },
 ];
 
-let withServerTools: BetaTool[] | undefined;
+/** Same bytes for everyone who may send messages; only offered on channels and to users allowed by config. */
+export const MESSAGE_SEND_TOOL_DEF: BetaTool = {
+  name: "message_send",
+  description: [
+    "Send a WhatsApp message to another person on the user's behalf, from your own number. Nothing is sent by this call: right after your reply, the user sees the exact message with Kirim and Batal buttons, and it is sent only if they tap Kirim.",
+    "Write the message as the user's assistant, in the recipient's language: greet them, introduce yourself by your name as the user's assistant, then say what the user wants clearly and politely. Do not add a signature; one is appended automatically.",
+    "One recipient per call. Give contact_id (from contact_find or contact_save) or phone. Calling again replaces the draft that is still waiting.",
+    "In your reply, say in one short sentence that the message is ready for their confirmation; do not repeat its text. If the recipient answers, their reply reaches the user directly and appears in a later turn as [Balasan dari ...].",
+  ].join("\n\n"),
+  input_schema: {
+    type: "object",
+    properties: {
+      text: { type: "string", description: "The message body, up to 1500 characters." },
+      contact_id: { type: "integer" },
+      phone: { type: "string" },
+    },
+    required: ["text"],
+  },
+};
+
+const toolSets = new Map<string, BetaTool[]>();
 
 export function toolsFor(user: UserRow): BetaTool[] {
-  if (!serverToolsFor(user.waId)) return TOOL_DEFS;
-  withServerTools ??= [...TOOL_DEFS, ...SERVER_TOOL_DEFS].sort((a, b) => a.name.localeCompare(b.name));
-  return withServerTools;
+  const servers = serverToolsFor(user.waId);
+  const messaging = messageSendFor(user.waId);
+  if (!servers && !messaging) return TOOL_DEFS;
+  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}`;
+  let tools = toolSets.get(key);
+  if (!tools) {
+    tools = [...TOOL_DEFS, ...(servers ? SERVER_TOOL_DEFS : []), ...(messaging ? [MESSAGE_SEND_TOOL_DEF] : [])].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    toolSets.set(key, tools);
+  }
+  return tools;
+}
+
+type Recipient = { to: string; name: string | null };
+
+async function resolveRecipient(user: UserRow, contactId: number | undefined, phone: string | undefined): Promise<Recipient | string> {
+  if (contactId) {
+    const [c] = await sql<{ name: string; phone: string | null }[]>`
+      select name, phone from contacts where id = ${contactId} and user_id = ${user.id}
+    `;
+    if (!c) return `Kontak #${contactId} tidak ditemukan.`;
+    if (!c.phone) return `Kontak ${c.name} belum punya nomor. Minta pengguna mengirim nomornya atau membagikan kartu kontaknya.`;
+    return { to: c.phone, name: c.name };
+  }
+  if (phone) {
+    const to = normalizePhone(phone);
+    if (!to) return `Nomor "${phone}" tidak valid.`;
+    const [c] = await sql<{ name: string }[]>`select name from contacts where user_id = ${user.id} and phone = ${to}`;
+    return { to, name: c?.name ?? null };
+  }
+  return "Sebutkan penerimanya: contact_id atau phone.";
 }
 
 const inputs = {
@@ -255,6 +312,11 @@ const inputs = {
     email: z.string().max(200).optional(),
   }),
   fact_remember: z.object({ fact: z.string().min(3).max(300) }),
+  message_send: z.object({
+    text: z.string().min(1).max(1500),
+    contact_id: z.coerce.number().int().positive().optional(),
+    phone: z.string().max(40).optional(),
+  }),
   message_draft: z.object({
     text: z.string().min(1).max(3000),
     contact_id: z.coerce.number().int().positive().optional(),
@@ -267,6 +329,7 @@ const inputs = {
   reminder_cancel: z.object({ id: z.coerce.number().int().positive() }),
   reminder_create: z.object({ text: z.string().min(1).max(500), at: z.string().min(10).max(40) }),
   reminder_list: z.object({}).loose(),
+  upload_link: z.object({}).loose(),
   server_add: z.object({
     name: z.string().min(1).max(40),
     host: z.string().min(1).max(255),
@@ -467,22 +530,32 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
   },
 
   async message_draft({ user }, { text, contact_id, phone }) {
-    let to: string | null = null;
-    let name: string | null = null;
-    if (contact_id) {
-      const [c] = await sql<{ name: string; phone: string | null }[]>`
-        select name, phone from contacts where id = ${contact_id} and user_id = ${user.id}
-      `;
-      if (!c) return fail(`Kontak #${contact_id} tidak ditemukan.`);
-      if (!c.phone) return fail(`Kontak ${c.name} belum punya nomor. Minta pengguna mengirim nomornya atau membagikan kartu kontaknya.`);
-      to = c.phone;
-      name = c.name;
-    } else if (phone) {
-      to = normalizePhone(phone);
-      if (!to) return fail(`Nomor "${phone}" tidak valid.`);
+    let recipient: Recipient | undefined;
+    if (contact_id || phone) {
+      const resolved = await resolveRecipient(user, contact_id, phone);
+      if (typeof resolved === "string") return fail(resolved);
+      recipient = resolved;
     }
-    const link = to ? waMeLink(to, text) : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    return ok({ to: name ?? to ?? "(pengguna memilih penerima)", link, text });
+    const link = recipient ? waMeLink(recipient.to, text) : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    return ok({ to: recipient?.name ?? recipient?.to ?? "(pengguna memilih penerima)", link, text });
+  },
+
+  async message_send({ user }, { text, contact_id, phone }) {
+    if (!messageSendFor(user.waId)) return fail("Mengirim pesan langsung belum tersedia untuk pengguna ini. Pakai message_draft.");
+    const recipient = await resolveRecipient(user, contact_id, phone);
+    if (typeof recipient === "string") return fail(recipient);
+    try {
+      const draft = await draftRelay(user, { toWa: recipient.to, contactName: recipient.name, body: text });
+      return ok({
+        status: "menunggu konfirmasi pengguna",
+        to: recipient.name ? `${recipient.name} (${recipient.to})` : recipient.to,
+        expires_in_minutes: CONFIRM_MINUTES,
+        draft_id: Number(draft.id),
+      });
+    } catch (err) {
+      if (err instanceof RelayError) return fail(err.message);
+      throw err;
+    }
   },
 
   async persona_set({ user }, { persona, name }) {
@@ -549,6 +622,12 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
     `;
     if (!rows.length) return ok("Tidak ada pengingat yang dijadwalkan.");
     return ok(rows.map((r) => ({ id: Number(r.id), when: formatDateTime(r.fireAt, user.timezone), text: r.text })));
+  },
+
+  async upload_link({ user }) {
+    const url = uploadUrlFor(user.id);
+    if (!url) return fail("Link unggah belum tersedia karena alamat publik Milo belum diketahui. Minta pengguna mencoba lagi sebentar lagi.");
+    return ok({ url, valid_hours: config.UPLOAD_LINK_HOURS });
   },
 
   async server_add({ user }, input) {

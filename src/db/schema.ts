@@ -142,6 +142,33 @@ alter table users add column if not exists assistant_name text;
 alter table users add column if not exists persona text;
 alter table sessions add column if not exists closed_at timestamptz;
 
+create table if not exists relay_messages (
+  id            bigserial primary key,
+  owner_id      bigint not null references users(id) on delete cascade,
+  to_wa         text not null,
+  contact_name  text,
+  body          text not null,
+  status        text not null default 'pending',
+  wamid         text,
+  error         text,
+  created_at    timestamptz not null default now(),
+  expires_at    timestamptz not null,
+  sent_at       timestamptz,
+  acked_at      timestamptz
+);
+create index if not exists relay_messages_to_idx on relay_messages (to_wa, sent_at desc) where status = 'sent';
+
+create table if not exists relay_replies (
+  id          bigserial primary key,
+  relay_id    bigint not null references relay_messages(id) on delete cascade,
+  owner_id    bigint not null references users(id) on delete cascade,
+  from_wa     text not null,
+  body        text not null,
+  created_at  timestamptz not null default now(),
+  seen_at     timestamptz
+);
+create index if not exists relay_replies_unseen_idx on relay_replies (owner_id) where seen_at is null;
+
 create table if not exists user_servers (
   id               bigserial primary key,
   user_id          bigint not null references users(id) on delete cascade,

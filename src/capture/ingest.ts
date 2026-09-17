@@ -1,8 +1,9 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { sql } from "../db/index.js";
-import type { WhatsApp } from "../wa/client.js";
+import { stagingPath, UPLOAD_PREFIX } from "../uploads/routes.js";
+import type { MediaFile, WhatsApp } from "../wa/client.js";
 import { extractTextFrom } from "./extract.js";
 
 export const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
@@ -33,6 +34,18 @@ export interface CaptureRow {
   createdAt: Date;
 }
 
+/** Media ids are WhatsApp/Fonnte references, or `upload:<id>` for files that came in through the upload link. */
+export async function loadInboundMedia(wa: WhatsApp, mediaId: string, maxBytes: number, mime?: string): Promise<MediaFile> {
+  if (!mediaId.startsWith(UPLOAD_PREFIX)) return wa.downloadMedia(mediaId, maxBytes);
+  const file = stagingPath(mediaId);
+  if ((await stat(file)).size > maxBytes) throw new Error("file terlalu besar");
+  return { data: await readFile(file), mimeType: mime ?? "application/octet-stream" };
+}
+
+export async function discardInboundMedia(mediaId: string): Promise<void> {
+  if (mediaId.startsWith(UPLOAD_PREFIX)) await rm(stagingPath(mediaId), { force: true });
+}
+
 export function userMediaDir(userId: string): string {
   return path.resolve(config.DATA_DIR, "media", userId);
 }
@@ -52,7 +65,7 @@ export async function saveMediaCapture(
   userId: string,
   input: { kind: "document" | "image" | "video"; mediaId: string; filename?: string; mime?: string; caption?: string },
 ): Promise<{ capture: CaptureRow; note?: string }> {
-  const media = await wa.downloadMedia(input.mediaId, MAX_MEDIA_BYTES);
+  const media = await loadInboundMedia(wa, input.mediaId, MAX_MEDIA_BYTES, input.mime);
   const mime = (input.mime ?? media.mimeType).split(";")[0] ?? "application/octet-stream";
   const extracted =
     input.kind === "video"
@@ -73,6 +86,7 @@ export async function saveMediaCapture(
   const capture = row!;
   const file = await storeFile(userId, capture.id, media.data, mime, input.filename);
   await sql`update captures set file_path = ${file} where id = ${capture.id}`;
+  await discardInboundMedia(input.mediaId);
   return { capture: { ...capture, filePath: file }, note: extracted.note };
 }
 

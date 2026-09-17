@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import type { Button } from "../wa/client.js";
+import { directAttachments } from "../uploads/links.js";
 import { formatDate, formatIdr } from "../util.js";
 
 export const BTN = {
@@ -87,20 +88,65 @@ export const TEXT = {
   deleted: "Semua data Anda sudah dihapus. Terima kasih sudah mencoba Milo.",
   voiceDisabled: "Pesan suara belum aktif di versi ini — silakan ketik pesannya dulu.",
   unsupported: "Jenis pesan ini belum bisa saya proses.",
+  relayUnavailable: "Konfirmasi itu sudah tidak berlaku. Minta saya menyusun pesannya lagi kalau masih perlu.",
+  relayAlreadySent: "Pesan itu sudah terkirim sebelumnya.",
   failure: "Maaf, ada gangguan di sisi kami. Coba kirim lagi sebentar lagi.",
   working: "Sebentar ya, masih saya kerjakan… ⏳",
   softMode:
     "Periode ini pemakaian Anda sudah cukup padat, jadi untuk sementara jawaban saya lebih ringkas. Pemakaian normal kembali di periode berikutnya.",
 };
 
+export function relayConfirm(who: string, minutes: number): string {
+  return `Kirim pesan di atas ke ${who}? Konfirmasi berlaku ${minutes} menit.`;
+}
+
+export function relaySent(name: string): string {
+  return `✅ Terkirim ke *${name}*. Kalau dibalas, balasannya saya teruskan ke sini.`;
+}
+
+export function relayCancelled(name: string): string {
+  return `Oke, pesan ke *${name}* tidak jadi dikirim.`;
+}
+
+export function relayFailed(name: string, error: string): string {
+  return `❌ Pesan ke *${name}* gagal terkirim (${error}). Coba lagi sebentar lagi, atau minta saya membuat link agar Anda kirim sendiri.`;
+}
+
+export function relayReply(name: string, waId: string, body: string): string {
+  return `💬 *Balasan dari ${name}* (${waId}):\n${body}`;
+}
+
+export function relayAck(assistantName: string, ownerName: string): string {
+  return `Terima kasih, pesan Anda sudah saya teruskan ke ${ownerName}. — ${assistantName}`;
+}
+
+export function uploadLink(url: string | undefined, hours: number): string {
+  if (!url) return "Maaf, link untuk mengirim file sedang tidak tersedia. Coba lagi sebentar lagi.";
+  return [
+    "📎 *Kirim file lewat link ini:*",
+    url,
+    "",
+    `PDF, Word, teks, foto, atau rekaman suara. Bisa sekaligus menulis pertanyaannya. Link ini pribadi dan berlaku ${hours} jam — jangan dibagikan.`,
+  ].join("\n");
+}
+
+export function attachmentMissing(url: string | undefined): string {
+  return [
+    "Sepertinya Anda mengirim file, tapi filenya tidak sampai ke saya lewat WhatsApp.",
+    url ? `Silakan kirim lewat link ini:\n${url}` : "Ketik *FILE* untuk mendapatkan link pengiriman file.",
+  ].join("\n\n");
+}
+
 export function trialStarted(days: number, endsAt: Date, timeZone: string): string {
   return [
     `✅ Masa coba *${days} hari* aktif sampai *${formatDate(endsAt, timeZone)}*.`,
     "",
     "Silakan langsung coba, misalnya:",
-    "• Kirim PDF, lalu tanya \"poin pentingnya apa?\"",
+    directAttachments()
+      ? "• Kirim PDF, lalu tanya \"poin pentingnya apa?\""
+      : "• Ketik *FILE* untuk mengirim PDF atau foto, lalu tanya \"poin pentingnya apa?\"",
     "• \"Ingetin saya besok jam 9 telepon Pak Andi\"",
-    "• Kirim pesan suara sambil jalan",
+    ...(directAttachments() ? ["• Kirim pesan suara sambil jalan"] : []),
     "• Bagikan kartu kontak, lalu \"ini PM saya\"",
     "• Ketik *GAYA* untuk memberi saya nama dan kepribadian pilihan Anda",
   ].join("\n");
