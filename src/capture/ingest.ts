@@ -66,13 +66,30 @@ export async function saveMediaCapture(
   input: { kind: "document" | "image" | "video"; mediaId: string; filename?: string; mime?: string; caption?: string },
 ): Promise<{ capture: CaptureRow; note?: string }> {
   const media = await loadInboundMedia(wa, input.mediaId, MAX_MEDIA_BYTES, input.mime);
-  const mime = (input.mime ?? media.mimeType).split(";")[0] ?? "application/octet-stream";
+  const saved = await saveBufferCapture(userId, {
+    kind: input.kind,
+    data: media.data,
+    mime: input.mime ?? media.mimeType,
+    ...(input.filename ? { filename: input.filename } : {}),
+    ...(input.caption ? { caption: input.caption } : {}),
+  });
+  await discardInboundMedia(input.mediaId);
+  return saved;
+}
+
+/** Stores bytes from any source (WhatsApp, the upload link, Gmail, Drive) as a capture with its extracted text. */
+export async function saveBufferCapture(
+  userId: string,
+  input: { kind: "document" | "image" | "video"; data: Buffer; mime: string; filename?: string; caption?: string; title?: string },
+): Promise<{ capture: CaptureRow; note?: string }> {
+  const mime = input.mime.split(";")[0] || "application/octet-stream";
   const extracted =
     input.kind === "video"
       ? { text: null, status: "unsupported" as const, note: "isi video belum dibaca" }
-      : await extractTextFrom(media.data, mime, input.filename);
+      : await extractTextFrom(input.data, mime, input.filename);
 
   const title =
+    input.title ??
     input.filename ??
     input.caption?.slice(0, 80) ??
     (input.kind === "image" ? "Foto" : input.kind === "video" ? "Video" : "Dokumen");
@@ -80,14 +97,13 @@ export async function saveMediaCapture(
 
   const [row] = await sql<CaptureRow[]>`
     insert into captures (user_id, kind, title, mime, size_bytes, page_count, text_content, status)
-    values (${userId}, ${input.kind}, ${title}, ${mime}, ${media.data.length}, ${extracted.pageCount ?? null}, ${text}, ${extracted.status})
+    values (${userId}, ${input.kind}, ${title}, ${mime}, ${input.data.length}, ${extracted.pageCount ?? null}, ${text}, ${extracted.status})
     returning *
   `;
   const capture = row!;
-  const file = await storeFile(userId, capture.id, media.data, mime, input.filename);
+  const file = await storeFile(userId, capture.id, input.data, mime, input.filename);
   await sql`update captures set file_path = ${file} where id = ${capture.id}`;
-  await discardInboundMedia(input.mediaId);
-  return { capture: { ...capture, filePath: file }, note: extracted.note };
+  return { capture: { ...capture, filePath: file }, ...(extracted.note ? { note: extracted.note } : {}) };
 }
 
 export async function saveTextCapture(

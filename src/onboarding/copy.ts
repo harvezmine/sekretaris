@@ -29,6 +29,7 @@ export function welcome(name: string | null): string {
     `📄 *Dokumen & foto*: ${directAttachments() ? "kirim" : "unggah"} PDF atau foto, lalu tanya isinya`,
     "✉️ *Pesan ke orang lain*: saya susunkan dengan rapi",
     "🧠 *Ingat hal penting*: klien, preferensi, kebiasaan Anda",
+    ...(config.GOOGLE_CLIENT_ID ? ["🔗 *Google*: kalender, Gmail, dan Drive Anda"] : []),
     "🎭 *Asisten sesuai selera*: nama dan kepribadian pilihan Anda, dari formal sampai gaya anime",
     ...(config.SERVER_ACCESS === "all" ? ["🖥️ *Cek server*: kondisi server dan error aplikasi"] : []),
     "",
@@ -62,7 +63,9 @@ export const FAQ = [
   "Pesan dan dokumen Anda disimpan di server Milo dan diproses oleh penyedia AI kami untuk menyusun jawaban. Kami tidak menjualnya atau memakainya untuk iklan. Ketik HAPUS kapan saja untuk menghapus semuanya.",
   "",
   "*Bisa membaca email dan kalender saya?*",
-  "Belum di versi ini. Sementara itu, teruskan email atau kirim dokumennya ke sini.",
+  config.GOOGLE_CLIENT_ID
+    ? "Bisa, setelah Anda menghubungkan akun Google (ketik *KONEKSI*). Saya tidak pernah melihat password Anda, dan email atau undangan hanya terkirim setelah Anda setujui."
+    : "Belum di versi ini. Sementara itu, teruskan email atau kirim dokumennya ke sini.",
   "",
   "*Bagaimana cara membayar?*",
   "Lewat QRIS, dari m-banking atau e-wallet apa pun. Tidak ada potongan otomatis — Anda memperpanjang sendiri.",
@@ -147,19 +150,22 @@ export function paidActivated(planLabel: string, until: Date, timeZone: string):
 
 // ---- getting to know the user -----------------------------------------------------------------------------------------
 
-export const SETUP_STEPS = 5;
-
 export const SETUP = {
-  intro:
-    "Supaya bantuan saya pas untuk Anda, kita kenalan dulu, ya: *5 pertanyaan singkat*. Setiap pertanyaan bisa dilewati (ketik *lewati*), dan semuanya bisa diubah nanti.",
-  callName: (hasName: boolean) =>
-    `*1/${SETUP_STEPS}* · Mau saya panggil apa?\nContoh: _Pak Josh_, _Bu Rina_, _Kak Dimas_, atau _Bos_.${hasName ? "" : " Ketik saja panggilannya."}`,
-  work: `*2/${SETUP_STEPS}* · Apa usaha atau pekerjaan Anda?\nContoh: _punya 3 cabang kedai kopi_, _direktur kontraktor_, _dokter gigi_. Ini membantu saya memahami konteks permintaan Anda.`,
-  personaIntro: `*3/${SETUP_STEPS}* · Pilih kepribadian asisten Anda. Balas dengan *angka*, atau *lewati* untuk gaya standar.`,
+  intro: (total: number) =>
+    `Supaya bantuan saya pas untuk Anda, kita kenalan dulu, ya: *${total} pertanyaan singkat*. Setiap pertanyaan bisa dilewati (ketik *lewati*), dan semuanya bisa diubah nanti.`,
+  callName: (hasName: boolean, total: number) =>
+    `*1/${total}* · Mau saya panggil apa?\nContoh: _Pak Josh_, _Bu Rina_, _Kak Dimas_, atau _Bos_.${hasName ? "" : " Ketik saja panggilannya."}`,
+  work: (total: number) =>
+    `*2/${total}* · Apa usaha atau pekerjaan Anda?\nContoh: _punya 3 cabang kedai kopi_, _direktur kontraktor_, _dokter gigi_. Ini membantu saya memahami konteks permintaan Anda.`,
+  personaIntro: (total: number) =>
+    `*3/${total}* · Pilih kepribadian asisten Anda. Balas dengan *angka*, atau *lewati* untuk gaya standar.`,
   assistantName: (suggested: string | undefined) =>
     `Mau kasih saya nama?${suggested ? ` Nama yang cocok untuk gaya ini: *${suggested}*.` : ""} Ketik nama pilihan Anda, atau pilih di bawah.`,
-  answerStyle: `*4/${SETUP_STEPS}* · Suka jawaban seperti apa?`,
-  briefing: `*5/${SETUP_STEPS}* · Mau saya kirimi *ringkasan agenda setiap pagi*?\nPilih di bawah, atau ketik jam lain, misalnya _06.30_.`,
+  answerStyle: (total: number) => `*4/${total}* · Suka jawaban seperti apa?`,
+  briefing: (total: number) =>
+    `*5/${total}* · Mau saya kirimi *ringkasan agenda setiap pagi*?\nPilih di bawah, atau ketik jam lain, misalnya _06.30_.`,
+  connect: (total: number) =>
+    `*${total}/${total}* · Hubungkan akun supaya saya bisa membaca jadwal, email, dan dokumen Anda. Pilih di bawah, atau ketik *lewati*.`,
   retryCallName: "Panggilan itu terlalu panjang atau berisi simbol. Coba yang singkat, misalnya _Pak Josh_, atau ketik *lewati*.",
   retryWork: "Tolong ceritakan singkat saja (maksimal 200 huruf), atau ketik *lewati*.",
   retryPersona: "Balas dengan angka 1–14, atau ketik *lewati*.",
@@ -190,13 +196,46 @@ export function quickMenuIntro(assistantName: string, who: string | undefined): 
   return `Hai${who ? ` ${who}` : ""}, ada yang bisa ${assistantName} bantu? Pilih di bawah, atau langsung ketik/ucapkan permintaan Anda.`;
 }
 
+// ---- connected accounts ---------------------------------------------------------------------------------------------
+
+export function connectLink(url: string | undefined, labels: string[], minutes: number): string {
+  if (!url) return "Maaf, link untuk menghubungkan Google belum bisa dibuat. Coba lagi sebentar lagi.";
+  return [
+    `🔗 *Hubungkan ${labels.join(", ")}*`,
+    url,
+    "",
+    `Buka link ini, pilih akun Google Anda, dan centang semua izin yang diminta. Link pribadi, berlaku ${minutes} menit. Saya kabari di sini begitu tersambung.`,
+  ].join("\n");
+}
+
+export function googleConnected(email: string | null, granted: string[], missing: string[], examples: string[]): string {
+  return [
+    `✅ Google terhubung${email ? ` (${email})` : ""}: ${granted.length ? granted.join(", ") : "belum ada layanan"}.`,
+    ...(missing.length ? [`⚠️ ${missing.join(", ")} belum diizinkan. Ketik *KONEKSI* dan centang semua izin saat login.`] : []),
+    ...(examples.length ? ["", "Coba minta, misalnya:", ...examples.map((e) => `• _${e}_`)] : []),
+  ].join("\n");
+}
+
+export function googleExpired(url: string): string {
+  return `⚠️ Login Google Anda sudah kedaluwarsa, jadi saya belum bisa membaca kalender, email, atau Drive. Login ulang lewat link ini (berlaku 30 menit):\n${url}`;
+}
+
+export const CONNECT_TEXT = {
+  disconnected: "Akun Google sudah diputus dan akses saya dicabut. Hubungkan lagi kapan saja lewat *KONEKSI*.",
+  notConnected: "Akun Google belum terhubung.",
+  server: "🖥️ Untuk menghubungkan server, kirim alamatnya, misalnya: _hubungkan server saya: user@alamat-ip port 22_. Saya balas dengan satu perintah untuk dipasang di server itu.",
+  actionCancelled: "Oke, dibatalkan.",
+  actionUnavailable: "Konfirmasi itu sudah tidak berlaku. Minta saya menyiapkannya lagi kalau masih perlu.",
+  actionDone: "Itu sudah dilakukan sebelumnya.",
+};
+
 export const QUICK_PROMPTS = {
   reminder: "⏰ Mau diingatkan apa, dan kapan?\nContoh: _ingetin besok jam 9 telepon Pak Andi_, atau _30 menit lagi angkat jemuran_.",
   message: "✉️ Mau kirim pesan ke siapa, dan isinya apa?\nContoh: _kabari Pak Andi 0812-xxxx, rapat jadi jam 3_. Bagikan kartu kontaknya kalau belum tersimpan.",
   server: "🖥️ Mau cek apa di server?\nContoh: _server saya aman?_, _ada error apa di aplikasi saya?_, atau _hubungkan server saya: user@alamat-ip port 22_.",
 };
 
-export function helpText(opts: { attachments: boolean; messaging: boolean; servers: boolean }): string {
+export function helpText(opts: { attachments: boolean; messaging: boolean; servers: boolean; google?: boolean }): string {
   return [
     "💡 *Contoh yang bisa Anda minta*",
     "",
@@ -219,7 +258,11 @@ export function helpText(opts: { attachments: boolean; messaging: boolean; serve
     "• _ringkasan pagi jam 6_ · _ingat: saya tidak minum kopi_",
     ...(opts.servers ? ["", "*Server*", "• _server saya aman?_ · _cek error aplikasi saya_"] : []),
     "",
-    "Kata kunci: *MENU* pilihan cepat · *GAYA* ganti kepribadian · *FILE* kirim file · *HAPUS* hapus data · *STOP* berhenti",
+    ...(opts.google
+      ? ["", "*Google*", "• _agenda minggu ini_ · _cari waktu kosong 1 jam besok_", "• _email penting hari ini apa?_ · _balas email Andi, bilang oke_", "• _cari proposal di Drive_ · _simpan file tadi ke Drive_"]
+      : []),
+    "",
+    "Kata kunci: *MENU* pilihan cepat · *GAYA* ganti kepribadian · *FILE* kirim file · *KONEKSI* hubungkan akun · *HAPUS* hapus data · *STOP* berhenti",
   ].join("\n");
 }
 

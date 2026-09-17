@@ -92,6 +92,18 @@ bersifat statis, tapi tetap dicatat di percakapan supaya AI tahu konteksnya.
 Ringkasan pagi dikirim scheduler sekali sehari pada jam pilihan pengguna, berisi pengingat hari itu. Kalau
 terlambat lebih dari 3 jam (misalnya app sempat mati), ringkasan hari itu dilewati.
 
+### Google: Kalender, Gmail, Drive
+
+Pengguna menghubungkan akun Google-nya dari langkah terakhir perkenalan, dari **MENU → Koneksi akun**, atau lewat
+kata kunci **KONEKSI**. Setelah terhubung, Milo bisa:
+
+- membaca dan membuat acara, mencari waktu kosong, serta menggabungkan kalender ke AGENDA dan ringkasan pagi;
+- mencari dan membaca email, menyimpan lampiran, serta menulis dan membalas email;
+- mencari dan membaca file Drive, serta menyimpan file ke folder "Milo".
+
+Mengirim email, mengirim undangan, dan menghapus acara selalu menunggu pengguna menekan tombol konfirmasi. Panduan
+Google Cloud ada di [docs/setup-google.md](docs/setup-google.md).
+
 ### File dan pesan ke orang lain (Fonnte)
 
 Paket Fonnte Free tidak meneruskan lampiran, jadi pengguna mengetik **FILE** untuk mendapatkan link unggah
@@ -243,6 +255,9 @@ src/
   relay/              pesan ke orang lain atas nama pengguna, konfirmasi, dan penerusan balasan
   persona/            katalog nama & kepribadian asisten
   profile/            profil pengguna, agenda hari ini, ringkasan pagi
+  google/             login Google (OAuth + PKCE), Kalender, Gmail, Drive, halaman koneksi
+  actions/            aksi yang menunggu tombol konfirmasi (kirim email, undangan, hapus acara)
+  web/                tampilan bersama halaman web (unggah file, koneksi Google)
   servers/            cek server hanya-baca: server pengguna (kunci terenkripsi), servers.json, SSH, Docker API
   cli.ts, smoke.ts    alat baris perintah dan uji API sungguhan
 ```
@@ -250,7 +265,7 @@ src/
 ## Belum ada di POC
 
 - **Enkripsi at-rest** untuk file dan percakapan — wajib sebelum pengguna sungguhan (UU PDP).
-- Integrasi Google (Kalender, Gmail, Drive), nomor sendiri per pelanggan (Embedded Signup), dan Jalur B.
+- Verifikasi aplikasi Google (dan audit CASA untuk baca inbox/seluruh Drive), nomor sendiri per pelanggan (Embedded Signup), dan Jalur B.
 - Balasan suara (TTS) dan telepon.
 - Aksi server (restart, deploy). Akses server saat ini hanya membaca.
 - Isi ulang kuota. Saat batas kewajaran tercapai, Milo beralih ke mode hemat dan memberi tahu sekali.

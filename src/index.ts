@@ -3,6 +3,7 @@ import { availableModels } from "./agent/providers.js";
 import { buildApp } from "./app.js";
 import { config } from "./config.js";
 import { migrate, sql } from "./db/index.js";
+import { enabledServices, googleEnabled, redirectUri } from "./google/client.js";
 import { adminNumbers, registry } from "./servers/registry.js";
 import { CloudApiClient, DryRunClient, type WhatsApp } from "./wa/client.js";
 import { FonnteClient } from "./wa/fonnte.js";
@@ -34,6 +35,15 @@ async function main(): Promise<void> {
   if (config.WA_PROVIDER === "fonnte") {
     const base = config.PUBLIC_BASE_URL || "https://<alamat-publik>";
     app.log.info(`Webhook Fonnte: ${base.replace(/\/$/, "")}/fonnte/webhook/<FONNTE_WEBHOOK_SECRET>`);
+  }
+  if (googleEnabled()) {
+    const redirect = redirectUri();
+    app.log.info({ services: enabledServices(), redirect: redirect ?? null }, "koneksi Google aktif");
+    if (!config.PUBLIC_BASE_URL && !config.GOOGLE_REDIRECT_URL) {
+      app.log.warn("PUBLIC_BASE_URL kosong: login Google butuh alamat tetap yang terdaftar di Google Cloud Console");
+    }
+  } else if (config.GOOGLE_CLIENT_ID) {
+    app.log.warn("GOOGLE_CLIENT_ID diisi, tapi koneksi Google belum aktif (cek GOOGLE_CLIENT_SECRET, SERVER_KEY_SECRET, GOOGLE_SERVICES)");
   }
   const servers = registry();
   for (const problem of servers.problems) app.log.warn(`Konfigurasi server: ${problem}`);

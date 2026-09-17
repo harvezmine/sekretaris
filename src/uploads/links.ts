@@ -2,30 +2,39 @@ import { createHash, createHmac } from "node:crypto";
 import { config } from "../config.js";
 import { safeEqual } from "../wa/verify.js";
 
-/** Signed, expiring link that lets one user send files through the browser when WhatsApp cannot deliver them. */
+/** Signed, expiring links to per-user web pages: sending files, connecting Google. */
 
 function signingKey(): Buffer {
   return createHash("sha256").update(`milo-upload-link:${config.ADMIN_TOKEN}`).digest();
 }
 
-function sign(payload: string): string {
-  return createHmac("sha256", signingKey()).update(payload).digest("base64url").slice(0, 32);
+function sign(purpose: string, payload: string): string {
+  return createHmac("sha256", signingKey()).update(`${purpose}:${payload}`).digest("base64url").slice(0, 32);
 }
 
-export function createUploadToken(userId: string, now = Date.now()): string {
-  const expires = Math.floor(now / 1000) + config.UPLOAD_LINK_HOURS * 3600;
+/** `purpose` is part of the signature, so a token made for one page cannot open another. */
+export function createSignedToken(purpose: string, userId: string, validSeconds: number, now = Date.now()): string {
+  const expires = Math.floor(now / 1000) + validSeconds;
   const payload = `${userId}.${expires.toString(36)}`;
-  return `${payload}.${sign(payload)}`;
+  return `${payload}.${sign(purpose, payload)}`;
 }
 
-export function readUploadToken(token: string, now = Date.now()): { userId: string; expiresAt: Date } | undefined {
+export function readSignedToken(purpose: string, token: string, now = Date.now()): { userId: string; expiresAt: Date } | undefined {
   const match = /^(\d{1,18})\.([0-9a-z]{1,12})\.([A-Za-z0-9_-]{32})$/.exec(token);
   if (!match) return undefined;
   const [, userId, expiresRaw, signature] = match;
-  if (!safeEqual(signature!, sign(`${userId}.${expiresRaw}`))) return undefined;
+  if (!safeEqual(signature!, sign(purpose, `${userId}.${expiresRaw}`))) return undefined;
   const expiresAt = new Date(parseInt(expiresRaw!, 36) * 1000);
   if (expiresAt.getTime() <= now) return undefined;
   return { userId: userId!, expiresAt };
+}
+
+export function createUploadToken(userId: string, now = Date.now()): string {
+  return createSignedToken("upload", userId, config.UPLOAD_LINK_HOURS * 3600, now);
+}
+
+export function readUploadToken(token: string, now = Date.now()): { userId: string; expiresAt: Date } | undefined {
+  return readSignedToken("upload", token, now);
 }
 
 let seenBaseUrl: string | undefined;

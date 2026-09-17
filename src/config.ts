@@ -47,6 +47,15 @@ const schema = z
     MESSAGE_SEND_DAILY_LIMIT: z.coerce.number().int().min(0).max(500).default(20),
     RELAY_REPLY_HOURS: z.coerce.number().int().min(1).max(720).default(72),
 
+    GOOGLE_CLIENT_ID: z.string().default(""),
+    GOOGLE_CLIENT_SECRET: z.string().default(""),
+    /** Override when Google must call back somewhere other than PUBLIC_BASE_URL/google/callback. */
+    GOOGLE_REDIRECT_URL: z.string().default(""),
+    GOOGLE_SERVICES: z.string().default("calendar,gmail,drive"),
+    /** Restricted scopes: fine in Testing mode, need a CASA assessment for a public app. */
+    GOOGLE_GMAIL_READ: z.stringbool().default(true),
+    GOOGLE_DRIVE_FULL: z.stringbool().default(true),
+
     SERVER_ACCESS: z.enum(["off", "admin", "all"]).default("admin"),
     SERVER_ADMIN_NUMBERS: z.string().default(""),
     SERVER_KEY_SECRET: z.string().default(""),
@@ -106,6 +115,10 @@ const schema = z
     }
     if (env.SERVER_KEY_SECRET && env.SERVER_KEY_SECRET.length < 32) {
       ctx.addIssue({ code: "custom", path: ["SERVER_KEY_SECRET"], message: "minimal 32 karakter (openssl rand -hex 32)" });
+    }
+    if (env.GOOGLE_CLIENT_ID) {
+      need("GOOGLE_CLIENT_SECRET", "wajib diisi bila GOOGLE_CLIENT_ID diisi");
+      need("SERVER_KEY_SECRET", "wajib diisi untuk menyimpan token Google secara terenkripsi (openssl rand -hex 32)");
     }
     if (env.SERVER_ACCESS === "all") {
       need("SERVER_KEY_SECRET", "wajib diisi untuk SERVER_ACCESS=all (openssl rand -hex 32); jangan diganti setelah dipakai");

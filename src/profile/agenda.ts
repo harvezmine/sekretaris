@@ -1,6 +1,9 @@
 import { sql, type UserRow } from "../db/index.js";
 import { DEFAULT_ASSISTANT_NAME } from "../persona/catalog.js";
-import { isoInZone } from "../util.js";
+import { eventLine, listEvents, type CalendarEvent } from "../google/calendar.js";
+import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
+import { searchMail, senderName } from "../google/gmail.js";
+import { formatClock, formatDay, isoInZone } from "../util.js";
 
 /** The user's local calendar day and clock, derived from their time zone. */
 export function localNow(timeZone: string, now = new Date()): { date: string; clock: string; offset: string } {
@@ -31,39 +34,111 @@ export async function agendaFor(user: UserRow, plusDays = 0, now = new Date()): 
   `;
 }
 
-const timeFmt = (d: Date, timeZone: string) =>
-  new Intl.DateTimeFormat("id-ID", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d).replace(":", ".");
+const timeFmt = formatClock;
+const dayFmt = formatDay;
 
-const dayFmt = (d: Date, timeZone: string) =>
-  new Intl.DateTimeFormat("id-ID", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(d);
+interface Entry {
+  at: Date;
+  sort: number;
+  line: string;
+}
 
-function itemLines(items: AgendaItem[], timeZone: string, now: Date): string[] {
+function reminderEntries(items: AgendaItem[], timeZone: string, now: Date, icons: boolean): Entry[] {
   return items.map((i) => {
     const done = i.status === "sent" || i.fireAt.getTime() <= now.getTime();
-    return `• ${timeFmt(i.fireAt, timeZone)} — ${i.text}${done ? " _(sudah lewat)_" : ""}`;
+    return {
+      at: i.fireAt,
+      sort: i.fireAt.getTime(),
+      line: `• ${icons ? "⏰ " : ""}${timeFmt(i.fireAt, timeZone)} — ${i.text}${done ? " _(sudah lewat)_" : ""}`,
+    };
   });
 }
 
-export async function agendaText(user: UserRow, now = new Date()): Promise<string> {
-  const [today, tomorrow] = await Promise.all([agendaFor(user, 0, now), agendaFor(user, 1, now)]);
-  const lines = [`📅 *Agenda hari ini* — ${dayFmt(now, user.timezone)}`];
-  lines.push(...(today.length ? itemLines(today, user.timezone, now) : ["Belum ada agenda untuk hari ini."]));
-  if (tomorrow.length) {
-    lines.push("", `*Besok:* ${tomorrow.length} agenda, pertama jam ${timeFmt(tomorrow[0]!.fireAt, user.timezone)} — ${tomorrow[0]!.text}`);
+function eventEntries(events: CalendarEvent[], timeZone: string, now: Date): Entry[] {
+  return events.map((e) => ({
+    at: e.start,
+    sort: e.allDay ? e.start.getTime() - 1 : e.start.getTime(),
+    line: `• 📅 ${eventLine(e, timeZone)}${!e.allDay && e.end.getTime() <= now.getTime() ? " _(sudah lewat)_" : ""}`,
+  }));
+}
+
+interface CalendarRead {
+  today: CalendarEvent[];
+  tomorrow: CalendarEvent[];
+  note?: string;
+}
+
+/** Undefined when the user has no calendar connected; a note when it is connected but unreadable. */
+async function calendarDays(user: UserRow, now: Date): Promise<CalendarRead | undefined> {
+  if (!googleEnabled()) return undefined;
+  const account = await getAccount(user.id);
+  if (!account?.scopes.includes(SCOPE.calendar)) return undefined;
+  const expired = { today: [], tomorrow: [], note: "⚠️ Google Kalender tidak bisa dibaca karena login kedaluwarsa. Ketik *KONEKSI* untuk login ulang." };
+  if (account.status !== "active") return expired;
+  const today = dayBounds(user.timezone, now, 0);
+  const tomorrow = dayBounds(user.timezone, now, 1);
+  try {
+    const events = await listEvents(user.id, user.timezone, { from: today.start, to: tomorrow.end });
+    return {
+      today: events.filter((e) => e.start < today.end && e.end > today.start),
+      tomorrow: events.filter((e) => e.start >= tomorrow.start),
+    };
+  } catch (err) {
+    if (err instanceof GoogleAuthError) return expired;
+    return { today: [], tomorrow: [], note: "⚠️ Google Kalender sedang tidak bisa dibaca." };
   }
-  lines.push("", "_Agenda diambil dari pengingat yang Anda buat di sini._ Tambah dengan, misalnya: _ingetin jam 3 rapat vendor_.");
+}
+
+export async function agendaText(user: UserRow, now = new Date()): Promise<string> {
+  const [today, tomorrow, calendar] = await Promise.all([agendaFor(user, 0, now), agendaFor(user, 1, now), calendarDays(user, now)]);
+  const icons = Boolean(calendar);
+  const entries = [...reminderEntries(today, user.timezone, now, icons), ...eventEntries(calendar?.today ?? [], user.timezone, now)].sort(
+    (a, b) => a.sort - b.sort,
+  );
+  const lines = [`📅 *Agenda hari ini* — ${dayFmt(now, user.timezone)}`];
+  lines.push(...(entries.length ? entries.map((e) => e.line) : ["Belum ada agenda untuk hari ini."]));
+  if (calendar?.note) lines.push(calendar.note);
+  const next = [
+    ...tomorrow.map((r) => ({ at: r.fireAt, text: `${timeFmt(r.fireAt, user.timezone)} — ${r.text}` })),
+    ...(calendar?.tomorrow ?? []).map((e) => ({ at: e.start, text: eventLine(e, user.timezone) })),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+  if (next.length) lines.push("", `*Besok:* ${next.length} agenda, pertama ${calendar ? "" : "jam "}${next[0]!.text}`);
+  lines.push(
+    "",
+    calendar
+      ? "_Dari Google Kalender dan pengingat Anda._"
+      : `_Agenda diambil dari pengingat yang Anda buat di sini._ Tambah dengan, misalnya: _ingetin jam 3 rapat vendor_.${googleEnabled() ? " Hubungkan Google Kalender lewat *KONEKSI*." : ""}`,
+  );
   return lines.join("\n");
 }
 
+async function importantMail(user: UserRow): Promise<string[]> {
+  if (!googleEnabled()) return [];
+  const account = await getAccount(user.id);
+  if (account?.status !== "active" || !account.scopes.includes(SCOPE.gmailRead)) return [];
+  try {
+    const mails = await searchMail(user.id, "is:unread is:important newer_than:1d", 3);
+    if (!mails.length) return [];
+    return ["", `📧 *Email penting belum dibaca* (${mails.length}):`, ...mails.map((m) => `• ${senderName(m.from)} — ${m.subject}`)];
+  } catch {
+    return [];
+  }
+}
+
 export async function briefingText(user: UserRow, now = new Date()): Promise<string> {
-  const today = await agendaFor(user, 0, now);
-  const upcoming = today.filter((i) => i.fireAt.getTime() > now.getTime());
+  const [today, calendar, mail] = await Promise.all([agendaFor(user, 0, now), calendarDays(user, now), importantMail(user)]);
+  const upcoming = [
+    ...reminderEntries(today.filter((i) => i.fireAt.getTime() > now.getTime()), user.timezone, now, Boolean(calendar)),
+    ...eventEntries((calendar?.today ?? []).filter((e) => e.allDay || e.end.getTime() > now.getTime()), user.timezone, now),
+  ].sort((a, b) => a.sort - b.sort);
   const who = user.profile?.callName ?? user.displayName ?? "";
   return [
     `☀️ Selamat pagi${who ? `, ${who}` : ""}!`,
     "",
     upcoming.length ? `*Agenda hari ini* (${upcoming.length}):` : "Hari ini belum ada agenda. Kalau ada janji atau tenggat, kabari saya supaya saya ingatkan.",
-    ...itemLines(upcoming, user.timezone, now),
+    ...upcoming.map((e) => e.line),
+    ...(calendar?.note ? [calendar.note] : []),
+    ...mail,
     "",
     `Ketik *MENU* untuk pilihan cepat. — ${user.assistantName ?? DEFAULT_ASSISTANT_NAME}`,
   ].join("\n");

@@ -24,6 +24,18 @@ export function formatDateTime(date: Date, timeZone: string): string {
   }).format(date);
 }
 
+/** 09.30, as Indonesians write times. */
+export function formatClock(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("id-ID", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .format(date)
+    .replace(":", ".");
+}
+
+/** Kamis, 17 September */
+export function formatDay(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("id-ID", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(date);
+}
+
 export function formatDate(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("id-ID", { timeZone, day: "numeric", month: "long", year: "numeric" }).format(date);
 }

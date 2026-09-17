@@ -73,8 +73,10 @@ describe("getting to know the user", () => {
     assert.equal(keywordAction("gaya"), "style");
     assert.equal(keywordAction("bantuan"), "help");
     assert.equal(keywordAction("agenda rapat besok"), undefined);
-    assert.deepEqual(SETUP_ORDER, ["callName", "work", "persona", "assistantName", "answerStyle", "briefing"]);
-    assert.equal(nextStep("briefing"), undefined);
+    assert.deepEqual(SETUP_ORDER, ["callName", "work", "persona", "assistantName", "answerStyle", "briefing", "connect"]);
+    assert.equal(nextStep("briefing"), undefined, "no connect step when nothing can be connected");
+    assert.equal(nextStep("briefing", true), "connect");
+    assert.equal(nextStep("connect", true), undefined);
   });
 
   test("setup buttons fit WhatsApp limits", () => {

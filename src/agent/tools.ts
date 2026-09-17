@@ -25,6 +25,7 @@ import { formatDate, formatDateTime, normalizePhone, waMeLink } from "../util.js
 import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../relay/service.js";
 import { uploadUrlFor } from "../uploads/links.js";
 import { normalizeCallName, normalizeWork, parseClock, updateProfile } from "../profile/profile.js";
+import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { closeSessions } from "./session.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -289,11 +290,17 @@ const toolSets = new Map<string, BetaTool[]>();
 export function toolsFor(user: UserRow): BetaTool[] {
   const servers = serverToolsFor(user.waId);
   const messaging = messageSendFor(user.waId);
-  if (!servers && !messaging) return TOOL_DEFS;
-  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}`;
+  const google = googleToolDefs();
+  if (!servers && !messaging && !google.length) return TOOL_DEFS;
+  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${google.map((t) => t.name).join(",")}`;
   let tools = toolSets.get(key);
   if (!tools) {
-    tools = [...TOOL_DEFS, ...(servers ? SERVER_TOOL_DEFS : []), ...(messaging ? [MESSAGE_SEND_TOOL_DEF] : [])].sort(byName);
+    tools = [
+      ...TOOL_DEFS,
+      ...(servers ? SERVER_TOOL_DEFS : []),
+      ...(messaging ? [MESSAGE_SEND_TOOL_DEF] : []),
+      ...google,
+    ].sort(byName);
     toolSets.set(key, tools);
   }
   return tools;
@@ -320,6 +327,7 @@ async function resolveRecipient(user: UserRow, contactId: number | undefined, ph
 }
 
 const inputs = {
+  ...googleInputs,
   account_status: z.object({}).loose(),
   capture_read: z.object({
     id: z.coerce.number().int().positive(),
@@ -411,6 +419,7 @@ export async function quotaState(user: UserRow): Promise<{ used: number; limit: 
 }
 
 const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inputs)[K]>) => Promise<ToolOutcome> } = {
+  ...googleHandlers,
   async account_status({ user }) {
     const quota = await quotaState(user);
     const tz = user.timezone;

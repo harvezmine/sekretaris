@@ -8,6 +8,7 @@ import { Debouncer } from "./debounce.js";
 import { createProvider, Payments } from "./payments/service.js";
 import type { PaymentProvider } from "./payments/provider.js";
 import { Pipeline } from "./pipeline.js";
+import { googleRoutes } from "./google/connect.js";
 import { Scheduler } from "./reminders/scheduler.js";
 import { rememberPublicHost } from "./uploads/links.js";
 import { uploadRoutes } from "./uploads/routes.js";
@@ -34,6 +35,7 @@ export interface AppDeps {
 
 export interface App {
   app: FastifyInstance;
+  pipeline: Pipeline;
   debouncer: Debouncer;
   payments: Payments;
   scheduler: Scheduler;
@@ -180,6 +182,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
 
   await app.register(adminRoutes, { prefix: "/admin", payments });
   await app.register(uploadRoutes, { onQueued: (userId) => debouncer.poke(userId, config.MILO_DEBOUNCE_MS) });
+  await app.register(googleRoutes, { onConnected: (result) => pipeline.googleConnected(result) });
 
-  return { app, debouncer, payments, scheduler, outbox };
+  return { app, pipeline, debouncer, payments, scheduler, outbox };
 }

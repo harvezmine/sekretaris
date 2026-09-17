@@ -171,6 +171,41 @@ create table if not exists relay_replies (
 );
 create index if not exists relay_replies_unseen_idx on relay_replies (owner_id) where seen_at is null;
 
+create table if not exists google_accounts (
+  user_id             bigint primary key references users(id) on delete cascade,
+  email               text,
+  scopes              text[] not null default '{}',
+  refresh_token_enc   text,
+  access_token_enc    text,
+  access_expires_at   timestamptz,
+  status              text not null default 'active',
+  last_error          text,
+  expired_notified_at timestamptz,
+  connected_at        timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create table if not exists oauth_states (
+  id             text primary key,
+  user_id        bigint not null references users(id) on delete cascade,
+  services       text[] not null,
+  code_verifier  text not null,
+  created_at     timestamptz not null default now(),
+  used_at        timestamptz
+);
+
+create table if not exists pending_actions (
+  id          bigserial primary key,
+  user_id     bigint not null references users(id) on delete cascade,
+  kind        text not null,
+  payload     jsonb not null,
+  status      text not null default 'pending',
+  result      text,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+create index if not exists pending_actions_user_idx on pending_actions (user_id, id desc);
+
 create table if not exists user_servers (
   id               bigserial primary key,
   user_id          bigint not null references users(id) on delete cascade,

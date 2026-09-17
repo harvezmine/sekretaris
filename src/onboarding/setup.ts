@@ -3,15 +3,37 @@ import { DEFAULT_ASSISTANT_NAME, findPersona, PERSONAS, type Persona } from "../
 import { clockLabel, normalizeCallName, styleLabel, type UserProfile } from "../profile/profile.js";
 import { messageSendFor } from "../relay/service.js";
 import { serverToolsFor } from "../servers/registry.js";
+import { enabledServices, googleEnabled, type GoogleService } from "../google/client.js";
 import { directAttachments } from "../uploads/links.js";
 import type { Button } from "../wa/client.js";
 import { helpText, SETUP_BTN } from "./copy.js";
 
 // ---- quick actions ------------------------------------------------------------------------------------------------------
 
-export type QuickAction = "agenda" | "reminder" | "file" | "message" | "server" | "style" | "profile" | "help" | "account";
+export type QuickAction =
+  | "agenda"
+  | "reminder"
+  | "file"
+  | "message"
+  | "server"
+  | "connect"
+  | "style"
+  | "profile"
+  | "help"
+  | "account";
 
-export const QUICK_ACTIONS = new Set<QuickAction>(["agenda", "reminder", "file", "message", "server", "style", "profile", "help", "account"]);
+export const QUICK_ACTIONS = new Set<QuickAction>([
+  "agenda",
+  "reminder",
+  "file",
+  "message",
+  "server",
+  "connect",
+  "style",
+  "profile",
+  "help",
+  "account",
+]);
 
 export const QUICK_MENU_LABEL = "Pilih menu";
 
@@ -28,6 +50,7 @@ export function quickRows(user: Pick<UserRow, "waId">): Button[] {
       description: messaging ? "Ke kontak Anda, terkirim setelah Anda setujui" : "Saya buatkan, Anda yang kirim",
     },
     ...(serverToolsFor(user.waId) ? [{ id: "qa:server", title: "🖥️ Cek server", description: "Kondisi server dan error aplikasi" }] : []),
+    ...(googleEnabled() ? [{ id: "qa:connect", title: "🔗 Koneksi akun", description: "Google Kalender, Gmail, dan Drive" }] : []),
     { id: "qa:style", title: "🎭 Ganti nama & gaya", description: "14 kepribadian, cowok dan cewek" },
     { id: "qa:profile", title: "👤 Profil saya", description: "Panggilan, preferensi, dan yang saya ingat" },
     { id: "qa:help", title: "💡 Contoh perintah", description: "Hal-hal yang bisa saya kerjakan" },
@@ -36,7 +59,12 @@ export function quickRows(user: Pick<UserRow, "waId">): Button[] {
 }
 
 export function helpFor(user: Pick<UserRow, "waId">): string {
-  return helpText({ attachments: directAttachments(), messaging: messageSendFor(user.waId), servers: serverToolsFor(user.waId) });
+  return helpText({
+    attachments: directAttachments(),
+    messaging: messageSendFor(user.waId),
+    servers: serverToolsFor(user.waId),
+    google: googleEnabled(),
+  });
 }
 
 /** Single-word commands that open a quick action without the model. */
@@ -46,6 +74,7 @@ const KEYWORD_ACTIONS: [RegExp, QuickAction][] = [
   [/^(profil|profile)$/i, "profile"],
   [/^(agenda|jadwal)( hari ini)?$/i, "agenda"],
   [/^(bantuan|help|contoh)$/i, "help"],
+  [/^(koneksi|integrasi|google|hubungkan akun)$/i, "connect"],
 ];
 
 export function keywordAction(text: string): QuickAction | undefined {
@@ -55,15 +84,53 @@ export function keywordAction(text: string): QuickAction | undefined {
 
 // ---- getting to know the user -------------------------------------------------------------------------------------------
 
-export const SETUP_ORDER = ["callName", "work", "persona", "assistantName", "answerStyle", "briefing"] as const;
+export const SETUP_ORDER = ["callName", "work", "persona", "assistantName", "answerStyle", "briefing", "connect"] as const;
 export type SetupStep = (typeof SETUP_ORDER)[number];
 
 export function isSetupStep(value: unknown): value is SetupStep {
   return typeof value === "string" && (SETUP_ORDER as readonly string[]).includes(value);
 }
 
-export function nextStep(step: SetupStep): SetupStep | undefined {
-  return SETUP_ORDER[SETUP_ORDER.indexOf(step) + 1];
+/** The last step only appears when there is something to connect. */
+export function withConnectStep(user: Pick<UserRow, "waId">): boolean {
+  return googleEnabled() || serverToolsFor(user.waId);
+}
+
+export function setupTotal(user: Pick<UserRow, "waId">): number {
+  return withConnectStep(user) ? 6 : 5;
+}
+
+export function nextStep(step: SetupStep, connect = false): SetupStep | undefined {
+  const next = SETUP_ORDER[SETUP_ORDER.indexOf(step) + 1];
+  return next === "connect" && !connect ? undefined : next;
+}
+
+export type ConnectChoice = GoogleService | "google" | "server";
+
+export function connectRows(user: Pick<UserRow, "waId">): Button[] {
+  const services = googleEnabled() ? enabledServices() : [];
+  return [
+    ...(services.length > 1 ? [{ id: "conn:google:all", title: "🔗 Semua akun Google", description: "Kalender, Gmail, dan Drive sekaligus" }] : []),
+    ...services.map((s) => CONNECT_ROWS[s]),
+    ...(serverToolsFor(user.waId) ? [{ id: "conn:server", title: "🖥️ Server", description: "Cek kondisi server dan error aplikasi" }] : []),
+    { id: "setup:skip", title: "Nanti saja", description: "Bisa dihubungkan kapan saja lewat MENU" },
+  ];
+}
+
+export const CONNECT_ROWS: Record<GoogleService, Button> = {
+  calendar: { id: "conn:google:calendar", title: "📅 Google Kalender", description: "Agenda, jadwal, dan undangan rapat" },
+  gmail: { id: "conn:google:gmail", title: "📧 Gmail", description: "Cari, baca, dan balas email" },
+  drive: { id: "conn:google:drive", title: "📁 Google Drive", description: "Cari dan simpan dokumen" },
+};
+
+export function parseConnectChoice(text: string): ConnectChoice | undefined {
+  const t = text.trim().toLowerCase();
+  if (/^(semua|google|semua akun google|akun google)$/.test(t)) return "google";
+  if (/kalender|calendar|jadwal/.test(t)) return "calendar";
+  if (/gmail|e-?mail|surel/.test(t)) return "gmail";
+  if (/drive|dokumen/.test(t)) return "drive";
+  if (/server/.test(t)) return "server";
+  return undefined;
 }
 
 export const SKIP = /^(lewati|skip|nanti|nanti saja|tidak|tidak usah|ga|gak|nggak|enggak|ga usah|gak usah|-)$/i;

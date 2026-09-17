@@ -9,6 +9,8 @@ import * as copy from "./onboarding/copy.js";
 import {
   assistantNameButtons,
   callNameButtons,
+  connectRows,
+  CONNECT_ROWS,
   FINISH,
   helpFor,
   isSetupStep,
@@ -16,15 +18,43 @@ import {
   looksLikeRequest,
   nextStep,
   parseAnswerStyle,
+  parseConnectChoice,
   parsePersonaChoice,
   QUICK_ACTIONS,
   QUICK_MENU_LABEL,
   quickRows,
   setupSummary,
+  setupTotal,
   SKIP,
+  withConnectStep,
+  type ConnectChoice,
   type QuickAction,
   type SetupStep,
 } from "./onboarding/setup.js";
+import {
+  actionButtons,
+  cancelAction,
+  claimAction,
+  finishAction,
+  getAction,
+  lastActionId,
+  pendingActionAfter,
+  type PendingAction,
+} from "./actions/pending.js";
+import { actionPreview, actionQuestion, runAction } from "./google/actions.js";
+import {
+  disconnect as disconnectGoogle,
+  enabledServices,
+  getAccount,
+  googleEnabled,
+  SERVICE_LABEL,
+  servicesGranted,
+  type AuthResult,
+  type GoogleService,
+} from "./google/client.js";
+import { CONNECT_MINUTES, connectUrlFor } from "./google/connect.js";
+import { serverToolsFor } from "./servers/registry.js";
+import { listUserServers } from "./servers/userServers.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona, normalizeAssistantName, personaChoices, personaMenu } from "./persona/catalog.js";
 import { agendaText } from "./profile/agenda.js";
 import { normalizeCallName, normalizeWork, parseClock, profileSummary, updateProfile } from "./profile/profile.js";
@@ -220,6 +250,9 @@ export class Pipeline {
       if (QUICK_ACTIONS.has(action)) return this.handleQuickAction(user, action);
     }
     if (id.startsWith("setup:")) return this.handleSetupButton(user, id.slice(6));
+    if (id.startsWith("conn:")) return this.handleConnectButton(user, id.slice(5));
+    const act = /^act_(yes|no):(\d+)$/.exec(id);
+    if (act) return this.handleActionButton(user, act[1] === "yes", act[2]!);
     const consent = user.consentAt ? {} : { consentAt: new Date() };
     switch (id) {
       case copy.BTN.code.id: {
@@ -397,6 +430,7 @@ export class Pipeline {
   }
 
   private async deleteEverything(user: UserRow): Promise<void> {
+    await disconnectGoogle(user.id).catch((err) => this.d.log.warn({ err, userId: user.id }, "pencabutan akses Google gagal"));
     await deleteUserMedia(user.id);
     await sql`delete from users where id = ${user.id}`;
     this.d.log.info({ userId: user.id }, "data pengguna dihapus atas permintaan");
@@ -523,6 +557,8 @@ export class Pipeline {
     const softMode = await this.softModeFor(user);
     const messaging = messageSendFor(user.waId);
     const relayMark = messaging ? await lastRelayId(user.id) : "0";
+    const google = googleEnabled();
+    const actionMark = google ? await lastActionId(user.id) : "0";
     const slowNotice =
       config.MILO_SLOW_NOTICE_MS >= 0
         ? setTimeout(() => {
@@ -544,6 +580,10 @@ export class Pipeline {
     if (messaging) {
       const draft = await pendingDraftAfter(user.id, relayMark);
       if (draft) await this.askRelayConfirmation(user, draft);
+    }
+    if (google) {
+      const action = await pendingActionAfter(user.id, actionMark);
+      if (action) await this.askActionConfirmation(user, action);
     }
   }
 
@@ -650,6 +690,8 @@ export class Pipeline {
         return this.replyStatic(user, note, copy.QUICK_PROMPTS.server);
       case "file":
         return this.replyStatic(user, note, copy.uploadLink(uploadUrlFor(user.id), config.UPLOAD_LINK_HOURS));
+      case "connect":
+        return this.showConnections(user);
       case "style":
         return this.replyStatic(user, note, personaMenu(user.assistantName ?? DEFAULT_ASSISTANT_NAME, findPersona(user.persona)));
       case "help":
@@ -672,6 +714,130 @@ export class Pipeline {
     }
   }
 
+  // ---- connected accounts ------------------------------------------------------------------------------------------------
+
+  private async showConnections(user: UserRow): Promise<void> {
+    const lines = ["🔗 *Koneksi akun*"];
+    const rows = [];
+    if (googleEnabled()) {
+      const account = await getAccount(user.id);
+      const granted = account ? servicesGranted(account.scopes) : [];
+      if (!account) {
+        lines.push("Google: belum terhubung.");
+      } else if (account.status !== "active") {
+        lines.push(`Google: ⚠️ ${account.email ?? "akun"}, login kedaluwarsa.`);
+        rows.push({ id: "conn:google:relogin", title: "🔄 Login ulang Google", description: "Sambungkan lagi akun yang sama" });
+      } else {
+        lines.push(`Google: ✅ ${account.email ?? "terhubung"} — ${granted.map((s) => SERVICE_LABEL[s]).join(", ") || "tanpa layanan"}.`);
+      }
+      const missing = enabledServices().filter((s) => !granted.includes(s));
+      if (!account && missing.length > 1) {
+        rows.push({ id: "conn:google:all", title: "🔗 Semua akun Google", description: "Kalender, Gmail, dan Drive sekaligus" });
+      }
+      rows.push(...missing.map((s) => CONNECT_ROWS[s]));
+      if (account) rows.push({ id: "conn:google:disconnect", title: "❌ Putuskan Google", description: "Cabut akses Milo ke akun Google Anda" });
+    }
+    if (serverToolsFor(user.waId)) {
+      const servers = await listUserServers(user.id);
+      lines.push(
+        servers.length
+          ? `Server: ${servers.map((s) => `${s.name} ${s.verifiedAt ? "✅" : "⏳"}`).join(", ")}.`
+          : "Server: belum ada.",
+      );
+      rows.push({ id: "conn:server", title: "🖥️ Tambah server", description: "Hubungkan server Linux Anda" });
+    }
+    const text = lines.join("\n");
+    if (rows.length) await this.d.outbox.list(user, `${text}\n\nPilih di bawah:`, "Pilih", rows.slice(0, 10));
+    else await this.d.outbox.text(user, text, { raw: true });
+    const model = await this.d.agent.modelFor(user).catch(() => null);
+    if (model) await recordStaticExchange(user, model, "[Menu: koneksi]", text);
+  }
+
+  private async handleConnectButton(user: UserRow, action: string): Promise<void> {
+    if (!hasAccess(user)) return this.showMenu(user);
+    if (action === "server") return this.connectChoice(user, "server");
+    const [kind, value] = action.split(":");
+    if (kind !== "google" || !value) return this.showQuickMenu(user);
+    if (value === "disconnect") {
+      const removed = await disconnectGoogle(user.id);
+      await closeSessions(user.id);
+      return this.replyStatic(user, "[Menu: putuskan Google]", removed ? copy.CONNECT_TEXT.disconnected : copy.CONNECT_TEXT.notConnected);
+    }
+    if (value === "relogin") {
+      const account = await getAccount(user.id);
+      const granted = account ? servicesGranted(account.scopes) : [];
+      return this.sendConnectLink(user, granted.length ? granted : enabledServices());
+    }
+    if (value === "all") return this.connectChoice(user, "google");
+    if ((enabledServices() as string[]).includes(value)) return this.connectChoice(user, value as GoogleService);
+    return this.showQuickMenu(user);
+  }
+
+  private async connectChoice(user: UserRow, choice: ConnectChoice): Promise<void> {
+    if (choice === "server") {
+      await this.replyStatic(user, "[Menu: hubungkan server]", copy.CONNECT_TEXT.server);
+    } else if (googleEnabled()) {
+      await this.sendConnectLink(user, choice === "google" ? enabledServices() : [choice]);
+    }
+    if (user.state === "SETUP") await this.finishSetup(user);
+  }
+
+  private async sendConnectLink(user: UserRow, services: GoogleService[]): Promise<void> {
+    const url = connectUrlFor(user.id, services);
+    const text = copy.connectLink(url, services.map((s) => SERVICE_LABEL[s]), CONNECT_MINUTES);
+    await this.replyStatic(user, `[Menu: hubungkan ${services.join(", ")}]`, text);
+  }
+
+  /** Called by the OAuth callback, outside this user's message queue: no transcript writes here. */
+  async googleConnected(result: AuthResult): Promise<void> {
+    const user = await getUser(result.userId);
+    if (!user || user.state === "OPTED_OUT") return;
+    const missing = result.requested.filter((s) => !result.granted.includes(s));
+    const examples = [
+      ...(result.granted.includes("calendar") ? ["agenda saya minggu ini apa?"] : []),
+      ...(result.granted.includes("gmail") ? ["ada email penting hari ini?"] : []),
+      ...(result.granted.includes("drive") ? ["cari file proposal di Drive"] : []),
+    ];
+    await closeSessions(user.id);
+    await this.d.outbox.text(
+      user,
+      copy.googleConnected(
+        result.email,
+        result.granted.map((s) => SERVICE_LABEL[s]),
+        missing.map((s) => SERVICE_LABEL[s]),
+        examples,
+      ),
+      { raw: true },
+    );
+    this.d.log.info({ userId: user.id, granted: result.granted }, "akun Google terhubung");
+  }
+
+  // ---- actions that wait for a tap -------------------------------------------------------------------------------------
+
+  private async askActionConfirmation(user: UserRow, action: PendingAction): Promise<void> {
+    await this.d.outbox.text(user, actionPreview(action, user), { raw: true });
+    await this.d.outbox.buttons(user, await actionQuestion(action, user), actionButtons(action));
+  }
+
+  private async handleActionButton(user: UserRow, yes: boolean, id: string): Promise<void> {
+    if (!hasAccess(user)) return this.showMenu(user);
+    if (!yes) {
+      const cancelled = await cancelAction(user.id, id);
+      const text = cancelled ? copy.CONNECT_TEXT.actionCancelled : copy.CONNECT_TEXT.actionUnavailable;
+      return this.replyStatic(user, `[Pengguna menekan Batal${cancelled ? `: ${cancelled.kind} tidak dijalankan` : ""}]`, text);
+    }
+    const action = await claimAction(user.id, id);
+    if (!action) {
+      const existing = await getAction(user.id, id);
+      const text = existing?.status === "done" ? copy.CONNECT_TEXT.actionDone : copy.CONNECT_TEXT.actionUnavailable;
+      return this.replyStatic(user, "[Pengguna menekan tombol konfirmasi yang sudah tidak berlaku]", text);
+    }
+    const outcome = await runAction(action, user);
+    await finishAction(action.id, outcome.ok ? "done" : "failed", outcome.text);
+    if (!outcome.ok) this.d.log.warn({ userId: user.id, actionId: id, kind: action.kind }, "aksi Google gagal");
+    await this.replyStatic(user, outcome.note, outcome.text);
+  }
+
   // ---- getting to know the user ------------------------------------------------------------------------------------------
 
   /** Called when access starts, by a trial code here or by a payment in Payments. */
@@ -686,18 +852,19 @@ export class Pipeline {
 
   private async startSetup(user: UserRow, lead?: string): Promise<void> {
     const updated = await updateUser(user.id, { state: "SETUP", stateData: { setupStep: "callName" } });
-    await this.d.outbox.text(updated, [lead, copy.SETUP.intro].filter(Boolean).join("\n\n"), { raw: true });
+    await this.d.outbox.text(updated, [lead, copy.SETUP.intro(setupTotal(updated))].filter(Boolean).join("\n\n"), { raw: true });
     await this.askSetupStep(updated, "callName");
   }
 
   private async askSetupStep(user: UserRow, step: SetupStep): Promise<void> {
+    const total = setupTotal(user);
     switch (step) {
       case "callName":
-        return this.d.outbox.buttons(user, copy.SETUP.callName(Boolean(user.displayName)), callNameButtons(user));
+        return this.d.outbox.buttons(user, copy.SETUP.callName(Boolean(user.displayName), total), callNameButtons(user));
       case "work":
-        return this.d.outbox.buttons(user, copy.SETUP.work, [copy.SETUP_BTN.skip]);
+        return this.d.outbox.buttons(user, copy.SETUP.work(total), [copy.SETUP_BTN.skip]);
       case "persona":
-        return this.d.outbox.text(user, [copy.SETUP.personaIntro, "", ...personaChoices()].join("\n"), { raw: true });
+        return this.d.outbox.text(user, [copy.SETUP.personaIntro(total), "", ...personaChoices()].join("\n"), { raw: true });
       case "assistantName":
         return this.d.outbox.buttons(
           user,
@@ -705,17 +872,19 @@ export class Pipeline {
           assistantNameButtons(user),
         );
       case "answerStyle":
-        return this.d.outbox.buttons(user, copy.SETUP.answerStyle, [
+        return this.d.outbox.buttons(user, copy.SETUP.answerStyle(total), [
           copy.SETUP_BTN.styleShort,
           copy.SETUP_BTN.styleLong,
           copy.SETUP_BTN.skip,
         ]);
       case "briefing":
-        return this.d.outbox.buttons(user, copy.SETUP.briefing, [
+        return this.d.outbox.buttons(user, copy.SETUP.briefing(total), [
           copy.SETUP_BTN.briefing7,
           copy.SETUP_BTN.briefing8,
           copy.SETUP_BTN.briefingOff,
         ]);
+      case "connect":
+        return this.d.outbox.list(user, copy.SETUP.connect(total), "Pilih akun", connectRows(user));
     }
   }
 
@@ -728,6 +897,10 @@ export class Pipeline {
     const step = this.currentStep(user);
     const texts = batch.filter((m) => m.inbound.kind === "text");
     const answer = texts.length === batch.length ? (lastOf(batch, "text")?.text.trim() ?? "") : "";
+    if (step === "connect" && answer) {
+      const choice = parseConnectChoice(answer);
+      if (choice) return this.connectChoice(user, choice);
+    }
     if (!answer || keywordAction(answer) || looksLikeRequest(answer, step)) {
       return this.pauseSetup(user, batch);
     }
@@ -771,6 +944,8 @@ export class Pipeline {
         await updateProfile(user.id, { briefingTime });
         return this.advanceSetup(user, step);
       }
+      case "connect":
+        return this.askSetupStep(user, step);
     }
   }
 
@@ -812,7 +987,7 @@ export class Pipeline {
   }
 
   private async advanceSetup(user: UserRow, from: SetupStep): Promise<void> {
-    const next = nextStep(from);
+    const next = nextStep(from, withConnectStep(user));
     if (!next) return this.finishSetup(user);
     const updated = await updateUser(user.id, { stateData: { ...user.stateData, setupStep: next } });
     await this.askSetupStep(updated, next);
