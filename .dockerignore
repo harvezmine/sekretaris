@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+backups
+test
+.env
+.env.*
+!.env.example
+.git
+*.log
+servers/servers.json
+servers/keys/

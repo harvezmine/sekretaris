@@ -1,0 +1,43 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const forced: Record<string, string> = {
+  DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://milo:milo@127.0.0.1:1/unused",
+  DATA_DIR: mkdtempSync(path.join(tmpdir(), "milo-test-")),
+  LOG_LEVEL: "error",
+  WA_DRY_RUN: "true",
+  WA_APP_SECRET: "test-app-secret",
+  WA_VERIFY_TOKEN: "verify-token-123",
+  ADMIN_TOKEN: "admin-token-0123456789abcdef",
+  WA_REMINDER_TEMPLATE: "",
+  MILO_MODEL: "claude-opus-5",
+  MILO_MODELS: "claude-opus-5:1,deepseek-flash:1",
+  DEEPSEEK_API_KEY: "",
+  DEEPSEEK_BASE_URL: "https://deepseek.invalid/anthropic",
+  MILO_EFFORT: "low",
+  MILO_FALLBACKS: "default",
+  MILO_DEBOUNCE_MS: "40",
+  MILO_SLOW_NOTICE_MS: "-1",
+  MILO_MAX_STEPS: "6",
+  SERVER_ACCESS: "admin",
+  SERVER_ADMIN_NUMBERS: "",
+  SERVER_KEY_SECRET: "test-server-key-secret-0123456789abcdef",
+  USER_SERVER_LIMIT: "2",
+  DOCKER_PROXY_URL: "",
+  SERVERS_FILE: "/nonexistent/servers.json",
+  PAYMENT_MODE: "bypass",
+  INSTANPAY_API_KEY: "",
+  INSTANPAY_SANDBOX_AUTOPAY_MS: "-1",
+  WA_PROVIDER: "meta",
+  FONNTE_TOKEN: "",
+  FONNTE_WEBHOOK_SECRET: "fonnte-secret-0123456789",
+  FONNTE_TYPING: "true",
+  PAYMENT_BYPASS_DELAY_MS: "30",
+  STT_API_KEY: "",
+  TRIAL_DAYS: "14",
+  TRIAL_NUDGE_DAY: "11",
+  QUOTA_TRIAL_TURNS: "220",
+  QUOTA_PAID_TURNS: "600",
+};
+Object.assign(process.env, forced);

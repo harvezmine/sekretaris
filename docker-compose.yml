@@ -1,0 +1,86 @@
+name: milo
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: milo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di .env}
+      POSTGRES_DB: milo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U milo -d milo"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    image: milo-ai:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://milo:${POSTGRES_PASSWORD}@db:5432/milo
+      DATA_DIR: /app/data
+      PORT: "3000"
+      # Kosongkan (DOCKER_PROXY_URL= di .env) untuk mematikan cek host Milo lewat Docker.
+      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://dockerproxy:2375}
+      SERVERS_FILE: /app/servers/servers.json
+    volumes:
+      - appdata:/app/data
+      - ./servers:/app/servers:ro
+    ports:
+      - "127.0.0.1:${LOCAL_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      dockerproxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Hanya-baca: Milo bisa melihat container, log dan pemakaian di mesin ini, tapi tidak bisa menjalankan,
+  # menghentikan atau mengubah apa pun (semua request selain GET ditolak). Tidak membuka port ke luar.
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      INFO: 1
+      SYSTEM: 1
+      POST: 0
+      EVENTS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # Alamat publik sementara tanpa akun/domain Cloudflare. URL-nya berganti setiap kali container ini dibuat ulang;
+  # lihat dengan: scripts/public-url.sh
+  quicktunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["quicktunnel"]
+    command: tunnel --no-autoupdate --url http://app:3000
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:
