@@ -1,7 +1,7 @@
 import { publicBaseUrl, readSignedToken } from "../uploads/links.js";
 
 const URL_PATTERN = /https?:\/\/[^\s<>()"'`]+/gi;
-const PAGE_PURPOSE: Record<string, string> = { u: "upload", connect: "google", l: "location" };
+const PAGE_PURPOSE: Record<string, string> = { u: "upload", connect: "google", l: "location", notion: "notion" };
 
 export const INVENTED_LINK_NOTE = "(link itu tidak valid; ketik *FILE* untuk link kirim file atau *KONEKSI* untuk link Google)";
 
@@ -18,7 +18,7 @@ export function isInventedMiloLink(raw: string, base = publicBaseUrl()): boolean
   }
   const baseHost = base ? new URL(base).host : undefined;
   if (baseHost && url.host === baseHost) {
-    const page = /^\/(u|connect|l)\/([^/?#]+)/.exec(url.pathname);
+    const page = /^\/(u|connect|l|notion)\/([^/?#]+)/.exec(url.pathname);
     return page ? !readSignedToken(PAGE_PURPOSE[page[1]!]!, page[2]!) : false;
   }
   return url.hostname.split(".").some((label) => /^milo(\b|-|$)/i.test(label));

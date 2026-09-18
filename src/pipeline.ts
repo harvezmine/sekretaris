@@ -66,6 +66,8 @@ import {
   type GoogleService,
 } from "./google/client.js";
 import { CONNECT_MINUTES, connectUrlFor } from "./google/connect.js";
+import { notionUrlFor, NOTION_CONNECT_MINUTES } from "./notion/connect.js";
+import { disconnectNotion, getNotionAccount, notionEnabled, type NotionAuthResult } from "./notion/client.js";
 import { serverToolsFor } from "./servers/registry.js";
 import { listUserServers, resolveServer } from "./servers/userServers.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona, personaMenu } from "./persona/catalog.js";
@@ -874,6 +876,15 @@ export class Pipeline {
       rows.push(...missing.map((s) => CONNECT_ROWS[s]));
       if (account) rows.push({ id: "conn:google:disconnect", title: "❌ Putuskan Google", description: "Cabut akses Milo ke akun Google Anda" });
     }
+    if (notionEnabled()) {
+      const notion = await getNotionAccount(user.id);
+      lines.push(notion ? `Notion: ✅ ${notion.workspaceName ?? "terhubung"}.` : "Notion: belum terhubung.");
+      rows.push(
+        notion
+          ? { id: "conn:notion:disconnect", title: "❌ Putuskan Notion", description: "Cabut akses Milo ke workspace Anda" }
+          : { id: "conn:notion", title: "📓 Notion", description: "Catatan, notulen, dan database Anda" },
+      );
+    }
     if (serverToolsFor(user.waId)) {
       const servers = await listUserServers(user.id);
       lines.push(
@@ -894,6 +905,14 @@ export class Pipeline {
     if (!hasAccess(user)) return this.showMenu(user);
     if (action === "server") return this.connectChoice(user, "server");
     const [kind, value] = action.split(":");
+    if (kind === "notion") {
+      if (value === "disconnect") {
+        const removed = await disconnectNotion(user.id);
+        await closeSessions(user.id);
+        return this.replyStatic(user, "[Menu: putuskan Notion]", removed ? copy.CONNECT_TEXT.notionDisconnected : copy.CONNECT_TEXT.notionNotConnected);
+      }
+      return this.sendNotionLink(user);
+    }
     if (kind !== "google" || !value) return this.showQuickMenu(user);
     if (value === "disconnect") {
       const removed = await disconnectGoogle(user.id);
@@ -913,10 +932,17 @@ export class Pipeline {
   private async connectChoice(user: UserRow, choice: ConnectChoice): Promise<void> {
     if (choice === "server") {
       await this.replyStatic(user, "[Menu: hubungkan server]", copy.CONNECT_TEXT.server);
+    } else if (choice === "notion") {
+      if (notionEnabled()) await this.sendNotionLink(user);
     } else if (googleEnabled()) {
       await this.sendConnectLink(user, choice === "google" ? enabledServices() : [choice]);
     }
     if (user.state === "SETUP") await this.finishSetup(user);
+  }
+
+  private async sendNotionLink(user: UserRow): Promise<void> {
+    const text = copy.notionLink(notionUrlFor(user.id), NOTION_CONNECT_MINUTES);
+    await this.replyStatic(user, "[Menu: hubungkan Notion]", text);
   }
 
   private async sendConnectLink(user: UserRow, services: GoogleService[]): Promise<void> {
@@ -926,6 +952,15 @@ export class Pipeline {
   }
 
   /** Called by the OAuth callback, outside this user's message queue: no transcript writes here. */
+  /** Notion just handed back a token: tell the user in the chat they left, with something they can try. */
+  async notionConnected(result: NotionAuthResult): Promise<void> {
+    const user = await getUser(result.userId);
+    if (!user || user.state === "OPTED_OUT") return;
+    await closeSessions(user.id);
+    await this.d.outbox.text(user, copy.notionConnected(result.workspaceName), { raw: true });
+    this.d.log.info({ userId: user.id }, "workspace Notion terhubung");
+  }
+
   async googleConnected(result: AuthResult): Promise<void> {
     const user = await getUser(result.userId);
     if (!user || user.state === "OPTED_OUT") return;

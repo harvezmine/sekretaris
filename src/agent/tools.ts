@@ -34,6 +34,7 @@ import type { RoutineKind } from "../routines/routines.js";
 import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
 import { searchGoogleContacts } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
+import { notionHandlers, notionInputs, notionToolDefs } from "./notionTools.js";
 import { webHandlers, webInputs, webToolDefs } from "./webTools.js";
 import { DIRECTIONS_TOOL_DEF, LOCATION_LINK_TOOL_DEF, mapsHandlers, mapsInputs, mapsToolDefs } from "./mapsTools.js";
 import { closeSessions } from "./session.js";
@@ -324,8 +325,9 @@ export function toolsFor(user: UserRow): BetaTool[] {
   const google = googleToolDefs();
   const web = webToolDefs();
   const maps = mapsToolDefs();
-  if (!servers && !messaging && !google.length && !web.length && !maps.length) return TOOL_DEFS;
-  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${web.length ? "w" : ""}${maps.length ? "p" : ""}${google.map((t) => t.name).join(",")}`;
+  const notion = notionToolDefs();
+  if (!servers && !messaging && !google.length && !web.length && !maps.length && !notion.length) return TOOL_DEFS;
+  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${web.length ? "w" : ""}${maps.length ? "p" : ""}${notion.length ? "n" : ""}${google.map((t) => t.name).join(",")}`;
   let tools = toolSets.get(key);
   if (!tools) {
     tools = [
@@ -335,6 +337,7 @@ export function toolsFor(user: UserRow): BetaTool[] {
       ...google,
       ...web,
       ...maps,
+      ...notion,
     ].sort(byName);
     toolSets.set(key, tools);
   }
@@ -363,6 +366,7 @@ async function resolveRecipient(user: UserRow, contactId: number | undefined, ph
 
 const inputs = {
   ...googleInputs,
+  ...notionInputs,
   ...webInputs,
   ...mapsInputs,
   account_status: z.object({}).loose(),
@@ -502,6 +506,7 @@ async function googleContactsReady(user: UserRow): Promise<boolean> {
 
 const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inputs)[K]>) => Promise<ToolOutcome> } = {
   ...googleHandlers,
+  ...notionHandlers,
   ...webHandlers,
   ...mapsHandlers,
   async account_status({ user }) {

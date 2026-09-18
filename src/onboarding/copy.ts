@@ -224,6 +224,29 @@ export function googleConnected(email: string | null, granted: string[], missing
   ].join("\n");
 }
 
+export function notionConnected(workspace: string | null): string {
+  return [
+    `Notion sudah tersambung${workspace ? ` (${workspace})` : ""}.`,
+    "",
+    "Sekarang Anda bisa minta, misalnya:",
+    "• _simpan notulen rapat tadi di Notion_",
+    "• _tambah tugas: kirim penawaran ke PT Karya, tenggat Jumat_",
+    "• _tugas saya yang belum selesai apa?_",
+    "",
+    "_Saya hanya melihat halaman yang Anda centang tadi. Kalau ada yang kurang, buka Connections di Notion dan tambahkan._",
+  ].join("\n");
+}
+
+export function notionLink(url: string | undefined, minutes: number): string {
+  if (!url) return "Maaf, link untuk menghubungkan Notion belum bisa dibuat. Coba lagi sebentar lagi.";
+  return [
+    "📓 *Hubungkan Notion*",
+    url,
+    "",
+    `Di layar Notion, centang halaman dan database yang boleh saya akses. Link ini pribadi dan berlaku ${minutes} menit.`,
+  ].join("\n");
+}
+
 export function googleExpired(url: string): string {
   return `⚠️ Login Google Anda sudah kedaluwarsa, jadi saya belum bisa membaca kalender, email, atau Drive. Login ulang lewat link ini (berlaku 30 menit):\n${url}`;
 }
@@ -231,6 +254,8 @@ export function googleExpired(url: string): string {
 export const CONNECT_TEXT = {
   disconnected: "Akun Google sudah diputus dan akses saya dicabut. Hubungkan lagi kapan saja lewat *KONEKSI*.",
   notConnected: "Akun Google belum terhubung.",
+  notionDisconnected: "Workspace Notion sudah diputus dan akses saya dicabut. Hubungkan lagi kapan saja lewat *KONEKSI*.",
+  notionNotConnected: "Notion belum terhubung.",
   server: "🖥️ Untuk menghubungkan server, kirim alamatnya, misalnya: _hubungkan server saya: user@alamat-ip port 22_. Saya balas dengan satu perintah untuk dipasang di server itu.",
   actionCancelled: "Oke, dibatalkan.",
   actionUnavailable: "Konfirmasinya sudah kedaluwarsa. Kalau masih perlu, bilang saja, saya siapkan lagi.",
@@ -321,6 +346,7 @@ export function helpText(opts: { attachments: boolean; servers: boolean; google?
           "• _cari proposal di Drive_ · _simpan file tadi ke Drive_",
           "• _catat tugas: siapkan draft kontrak_ · _tugas saya apa saja?_",
           "• _buatkan form pesanan: nama, nomor HP, jumlah_ · _sudah berapa yang isi?_",
+          "• _simpan notulen ini di Notion_ · _tugas saya yang belum selesai apa?_",
         ]
       : []),
     "",

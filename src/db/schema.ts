@@ -291,6 +291,15 @@ create table if not exists relay_inbox (
 );
 create index if not exists relay_inbox_unseen_idx on relay_inbox (user_id) where seen_at is null;
 
+create table if not exists notion_accounts (
+  user_id         bigint primary key references users(id) on delete cascade,
+  workspace_id    text not null,
+  workspace_name  text,
+  bot_id          text,
+  token_enc       text not null,
+  connected_at    timestamptz not null default now()
+);
+
 create table if not exists google_forms (
   id             bigserial primary key,
   user_id        bigint not null references users(id) on delete cascade,
@@ -310,4 +319,6 @@ create table if not exists routine_log (
   at       timestamptz not null default now(),
   primary key (user_id, kind, on_date)
 );
+
+alter table oauth_states add column if not exists provider text not null default 'google';
 `;

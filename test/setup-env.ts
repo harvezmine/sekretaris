@@ -44,6 +44,8 @@ const forced: Record<string, string> = {
   GOOGLE_REDIRECT_URL: "",
   GOOGLE_SERVICES: "calendar,gmail,drive",
   GOOGLE_MAPS_API_KEY: "",
+  NOTION_CLIENT_ID: "",
+  NOTION_CLIENT_SECRET: "",
   PLACES_PROVIDER: "off",
   PLACE_SEARCHES_PER_DAY: "30",
   OVERPASS_URL: "https://overpass.invalid/api/interpreter",

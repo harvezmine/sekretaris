@@ -101,7 +101,7 @@ export function nextStep(step: SetupStep, connect = false): SetupStep | undefine
   return next === "connect" && !connect ? undefined : next;
 }
 
-export type ConnectChoice = GoogleService | "google" | "server";
+export type ConnectChoice = GoogleService | "google" | "server" | "notion";
 
 export const CONNECT_ROWS: Record<GoogleService, Button> = {
   calendar: { id: "conn:google:calendar", title: "📅 Google Kalender", description: "Agenda, jadwal, dan undangan rapat" },
@@ -121,6 +121,7 @@ export function parseConnectChoice(text: string): ConnectChoice | undefined {
   if (/kontak|contact/.test(t)) return "contacts";
   if (/task|tugas|to.?do/.test(t)) return "tasks";
   if (/form|formulir|survei|survey/.test(t)) return "forms";
+  if (/notion/.test(t)) return "notion";
   if (/server/.test(t)) return "server";
   return undefined;
 }

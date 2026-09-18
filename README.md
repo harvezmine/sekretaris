@@ -126,6 +126,10 @@ Selain Kalender, Gmail, Drive, dan Kontak, ada **Google Tasks** (tugas dari chat
 dan yang jatuh tempo hari ini ikut di agenda) dan **Google Formulir** (buat form pesanan atau survei lewat chat,
 lalu Milo membacakan ringkasan jawabannya).
 
+Selain Google, ada **Notion**: catatan dan notulen jadi halaman, tugas dan pesanan masuk ke database, lalu
+dibacakan lagi saat ditanya. Izinnya per halaman, dipilih pengguna sendiri di layar Notion. Lihat
+[docs/setup-notion.md](docs/setup-notion.md).
+
 Pengguna menghubungkan akun Google-nya dari langkah terakhir perkenalan, dari **MENU → Koneksi akun**, atau lewat
 kata kunci **KONEKSI**. Setelah terhubung, Milo bisa:
 
@@ -286,6 +290,7 @@ src/
   reminders/          pengiriman pengingat, aturan pengulangan (RRULE), kedaluwarsa QR
   admin/              laporan pemakaian dan rute admin
   uploads/            link & halaman unggah file (untuk kanal tanpa lampiran)
+  notion/             OAuth Notion, halaman & database workspace pengguna, penerjemah teks ke blok
   relay/              pesan ke orang lain atas nama pengguna, konfirmasi, dan penerusan balasan
   persona/            katalog nama & kepribadian asisten
   profile/            profil pengguna, agenda hari ini, ringkasan pagi

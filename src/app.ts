@@ -9,6 +9,7 @@ import { createProvider, Payments } from "./payments/service.js";
 import type { PaymentProvider } from "./payments/provider.js";
 import { Pipeline } from "./pipeline.js";
 import { googleRoutes } from "./google/connect.js";
+import { notionRoutes } from "./notion/connect.js";
 import { Scheduler } from "./reminders/scheduler.js";
 import { rememberPublicHost } from "./uploads/links.js";
 import { uploadRoutes } from "./uploads/routes.js";
@@ -209,6 +210,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
   await app.register(uploadRoutes, { onQueued: (userId) => debouncer.poke(userId, config.MILO_DEBOUNCE_MS) });
   await app.register(locationRoutes, { onQueued: (userId) => debouncer.poke(userId, 300) });
   await app.register(googleRoutes, { onConnected: (result) => pipeline.googleConnected(result) });
+  await app.register(notionRoutes, { onConnected: (result) => pipeline.notionConnected(result) });
 
   return { app, pipeline, debouncer, payments, scheduler, outbox };
 }

@@ -65,6 +65,9 @@ const schema = z
     /** Override when Google must call back somewhere other than PUBLIC_BASE_URL/google/callback. */
     GOOGLE_REDIRECT_URL: z.string().default(""),
     GOOGLE_SERVICES: z.string().default("calendar,gmail,drive,contacts,tasks,forms"),
+
+    NOTION_CLIENT_ID: z.string().default(""),
+    NOTION_CLIENT_SECRET: z.string().default(""),
     /** Restricted scopes: fine in Testing mode, need a CASA assessment for a public app. */
     GOOGLE_GMAIL_READ: z.stringbool().default(true),
     GOOGLE_DRIVE_FULL: z.stringbool().default(true),
