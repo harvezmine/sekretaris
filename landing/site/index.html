@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sekretaris AI | Sekretaris harian Anda, di WhatsApp</title>
-<meta name="description" content="Sekretaris harian yang bekerja langsung dari WhatsApp. Jadwal, pengingat, email, notulen rapat, kabar untuk klien, sampai rekomendasi tempat dan navigasi. Mulai Rp500.000 per bulan, coba gratis 14 hari.">
+<meta name="description" content="Sekretaris harian yang bekerja langsung dari WhatsApp. Agenda, pengingat, notulen, email, catatan omzet, sampai rekomendasi tempat dan rute. Mulai Rp500.000 per bulan, coba gratis 14 hari.">
 <meta name="theme-color" content="#08090a">
 <link rel="canonical" href="https://secretary.my.id/">
 <meta property="og:type" content="website">
@@ -33,14 +33,12 @@
   <defs>
     <symbol id="i-wa" viewBox="0 0 24 24"><path fill="currentColor" d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.94 1.16-.18.2-.35.22-.65.08-.3-.15-1.26-.47-2.39-1.48-.88-.79-1.48-1.76-1.66-2.06-.17-.3-.02-.46.13-.6.14-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.08 4.49.7.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.08-.12-.28-.2-.58-.34m-5.42 7.4a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.44-9.89 9.89-9.89 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.89 6.99c0 5.45-4.43 9.89-9.89 9.89m8.42-18.3A11.82 11.82 0 0 0 12.05 0C5.5 0 .16 5.34.16 11.89c0 2.1.55 4.14 1.59 5.95L.06 24l6.3-1.65a11.88 11.88 0 0 0 5.69 1.45c6.55 0 11.89-5.34 11.89-11.89 0-3.18-1.24-6.17-3.48-8.42Z"/></symbol>
 
-    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5z"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
     <symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.4 12.2 2.5 2.5 4.7-5"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
 
-    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 9a6.5 6.5 0 0 0-13 0c0 5.2-2 6.8-2 6.8h17s-2-1.6-2-6.8z"/><path d="M13.8 19.5a2.1 2.1 0 0 1-3.6 0"/></symbol>
     <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 2.8v4.4M16 2.8v4.4M3 10h18"/><path d="M7.5 14h3v3h-3z"/></symbol>
     <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="5" width="18.4" height="14" rx="3"/><path d="m4 7.6 6.9 5.1a1.9 1.9 0 0 0 2.2 0L20 7.6"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.2 2.8H7.6a2.4 2.4 0 0 0-2.4 2.4v13.6a2.4 2.4 0 0 0 2.4 2.4h8.8a2.4 2.4 0 0 0 2.4-2.4V7.4z"/><path d="M14.2 2.8v4.6h4.6M8.6 13h6.8M8.6 16.6h4.4"/></symbol>
@@ -48,20 +46,11 @@
     <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 2.8 10.4 13.6"/><path d="M21.2 2.8 14.4 21.6l-4-8-8-4z"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10.4c0 5.4-8 11.8-8 11.8s-8-6.4-8-11.8a8 8 0 1 1 16 0z"/><circle cx="12" cy="10.2" r="2.8"/></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.2 9.6h17.6M3.2 14.4h17.6"/><path d="M12 3c2.4 2.7 3.7 5.7 3.7 9S14.4 18.3 12 21c-2.4-2.7-3.7-5.7-3.7-9S9.6 5.7 12 3z"/></symbol>
-    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 3H5.9A2.9 2.9 0 0 0 3 5.9C3 14.8 9.2 21 18.1 21a2.9 2.9 0 0 0 2.9-2.9v-2.3a1.3 1.3 0 0 0-1-1.3l-3.3-.8a1.3 1.3 0 0 0-1.3.4l-1.1 1.2a12.4 12.4 0 0 1-5.5-5.5l1.2-1.1a1.3 1.3 0 0 0 .4-1.3l-.8-3.3a1.3 1.3 0 0 0-1.4-1.1z"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.2" cy="8.2" r="3.6"/><path d="M2.6 20a6.6 6.6 0 0 1 13.2 0"/><path d="M16.6 4.9a3.6 3.6 0 0 1 0 6.9M18.2 14.3A6.6 6.6 0 0 1 21.6 20"/></symbol>
     <symbol id="i-drive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.2 19.4a4.7 4.7 0 0 1-.6-9.3 6.2 6.2 0 0 1 11.8 1.5 4 4 0 0 1-.8 7.8z"/><path d="M12 15.6V9.8M9.6 12.2 12 9.8l2.4 2.4"/></symbol>
-    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6 4.8 5.6v5.6c0 4.4 3 8.4 7.2 9.7 4.2-1.3 7.2-5.3 7.2-9.7V5.6z"/><path d="m9 11.8 2.3 2.3 4.2-4.4"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4.4" y="10" width="15.2" height="11.2" rx="2.8"/><path d="M8 10V7.6a4 4 0 0 1 8 0V10M12 14.6v2.4"/></symbol>
     <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.6" rx="7.4" ry="3"/><path d="M4.6 5.6v12.8c0 1.7 3.3 3 7.4 3s7.4-1.3 7.4-3V5.6M4.6 12c0 1.7 3.3 3 7.4 3s7.4-1.3 7.4-3"/></symbol>
-    <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="5.6" width="18.4" height="13.2" rx="3"/><path d="M2.8 10.2h18.4M6.6 14.8h3.4"/></symbol>
     <symbol id="i-qris" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><path d="M14 14h3v3M21 17v4h-4M17.5 21h.01"/></symbol>
-    <symbol id="i-store" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 9.6h16.8V20a1.2 1.2 0 0 1-1.2 1.2H4.8A1.2 1.2 0 0 1 3.6 20z"/><path d="m2.6 9.6 1.6-6.4h15.6l1.6 6.4"/><path d="M9.6 21.2v-6.4h4.8v6.4"/></symbol>
-    <symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="7.2" width="18.4" height="13.4" rx="2.6"/><path d="M8.4 7.2V5.8a2.2 2.2 0 0 1 2.2-2.2h2.8a2.2 2.2 0 0 1 2.2 2.2v1.4M2.8 13h18.4"/></symbol>
-    <symbol id="i-crown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m2.8 7.4 4.4 3.4L12 4.2l4.8 6.6 4.4-3.4-2 11H4.8z"/><path d="M5.4 20.4h13.2"/></symbol>
-    <symbol id="i-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2 13.8 9 19.6 11l-5.8 2L12 18.8 10.2 13 4.4 11l5.8-2z"/><path d="M18.4 3v3.2M20 4.6h-3.2"/></symbol>
-    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.8v5.5l3.4 2"/></symbol>
-    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 2.4 4.6 13.8h6.2L10 21.6l8.6-11.4h-6.2z"/></symbol>
   </defs>
 </svg>
 
@@ -72,10 +61,8 @@
       <span class="brand-name">Sekretaris AI</span>
     </a>
     <nav class="nav-links" aria-label="Navigasi utama">
-      <a href="#untuk-siapa">Untuk siapa</a>
-      <a href="#kemampuan">Kemampuan</a>
-      <a href="#hasil">Hasil kerja</a>
-      <a href="#kendali">Kendali</a>
+      <a href="#contoh">Contoh</a>
+      <a href="#mulai">Cara mulai</a>
       <a href="#harga">Harga</a>
       <a href="#pertanyaan">Tanya jawab</a>
     </nav>
@@ -90,9 +77,8 @@
   <section class="hero">
     <div class="wrap">
       <div class="copy">
-        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Hidup di dalam WhatsApp Anda</span>
         <h1>Sekretaris harian Anda, <span class="mark">sejauh satu pesan</span> WhatsApp.</h1>
-        <p class="lead">Untuk profesional, pemilik usaha, dan eksekutif. Kirim pesan seperti biasa &mdash; jadwal, notulen rapat, kabar untuk klien, sampai tempat makan siang untuk menjamu tamu langsung diurus.</p>
+        <p class="lead">Minta seperti Anda meminta ke orang. Jadwal, notulen, email, dan kabar untuk klien langsung diurus.</p>
         <div class="cta-row">
           <a class="btn btn-wa" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20mau%20coba%20Sekretaris%20AI." rel="noopener">
             <svg aria-hidden="true"><use href="#i-wa"/></svg>Mulai chat di WhatsApp
@@ -107,12 +93,7 @@
       </div>
 
       <div class="stage">
-        <div class="float float-a" aria-hidden="true">
-          <svg><use href="#i-bell"/></svg>
-          <div>Agenda pagi terkirim<small>Setiap hari, 06.30</small></div>
-        </div>
-
-        <div class="phone" role="img" aria-label="Contoh percakapan di WhatsApp: pengguna meminta notulen rapat vendor dibuat, sekretaris mengirim tautan Google Docs; pengguna meminta Pak Andi dikabari, sekretaris menyiapkan pesan dan menunggu konfirmasi kirim; pengguna mencari tempat makan siang untuk klien dan menerima rekomendasi beserta tautan navigasi.">
+        <div class="phone" role="img" aria-label="Contoh percakapan WhatsApp: pengguna minta diingatkan rapat vendor besok jam sembilan, sekretaris menyanggupi, lalu pengguna menanyakan jadwal besok dan sekretaris menyebutkan tiga agenda.">
           <div class="phone-head" aria-hidden="true">
             <span class="avatar">S</span>
             <div>
@@ -122,304 +103,222 @@
             <span class="wa-badge"><svg><use href="#i-wa"/></svg></span>
           </div>
           <div class="chat" aria-hidden="true">
-            <div class="msg me">buatkan notulen rapat vendor tadi: harga naik 5%, penawaran dikirim Jumat<time>11.02</time></div>
-            <div class="msg bot">Notulen rapat vendor sudah jadi.
-              <span class="file"><svg><use href="#i-doc"/></svg><span>Notulen Rapat Vendor &mdash; 18 Sep</span></span>
-              <span class="url">docs.google.com/document/d/1vQ&hellip;</span><time>11.02</time></div>
-            <div class="msg me">kabari Pak Andi, penawarannya kita kirim Jumat<time>11.04</time></div>
-            <div class="msg bot has-actions">Pesan untuk <b>Pak Andi</b> sudah siap:<br><i>&ldquo;Selamat siang Pak Andi, penawaran dari kami akan dikirim hari Jumat. Terima kasih.&rdquo;</i><time>11.04</time>
-              <div class="confirm">
-                <span><svg><use href="#i-send"/></svg>Kirim</span>
-                <span><svg><use href="#i-x"/></svg>Batal</span>
-              </div>
-            </div>
-            <div class="msg me">cari tempat makan siang buat klien dekat sini<time>11.06</time></div>
-            <div class="msg bot">Paling sering dipuji untuk makan siang bisnis: <b>Senja Kitchen</b>, 650 m dari Anda.
-              <span class="file"><svg><use href="#i-pin"/></svg><span>Buka rute di Google Maps</span></span><time>11.06</time></div>
+            <div class="msg me">ingetin besok jam 9 rapat sama vendor<time>21.40</time></div>
+            <div class="msg bot">Siap. Besok, Jumat 19 September, jam 09.00 saya ingatkan.<time>21.40</time></div>
+            <div class="msg me">besok saya sibuk apa aja?<time>21.41</time></div>
+            <div class="msg bot">Tiga agenda: 09.00 rapat vendor, 13.30 tinjau proyek Depok, 16.00 telepon Bu Sinta.<time>21.41</time></div>
             <div class="typing"><i></i><i></i><i></i></div>
           </div>
         </div>
-
-        <div class="float float-b" aria-hidden="true">
-          <svg><use href="#i-shield"/></svg>
-          <div>Menunggu konfirmasi<small>Tidak ada yang terkirim diam-diam</small></div>
-        </div>
       </div>
     </div>
   </section>
 
-  <section class="ticker" aria-label="Layanan yang terhubung">
-    <p class="ticker-label">Bekerja di atas alat yang sudah Anda pakai</p>
-    <div class="ticker-track" aria-hidden="true">
-      <span><svg><use href="#i-wa"/></svg>WhatsApp</span>
-      <span><svg><use href="#i-calendar"/></svg>Google Kalender</span>
-      <span><svg><use href="#i-mail"/></svg>Gmail</span>
-      <span><svg><use href="#i-doc"/></svg>Google Docs</span>
-      <span><svg><use href="#i-sheet"/></svg>Google Sheets</span>
-      <span><svg><use href="#i-drive"/></svg>Google Drive</span>
-      <span><svg><use href="#i-users"/></svg>Google Kontak</span>
-      <span><svg><use href="#i-pin"/></svg>Google Maps</span>
-      <span><svg><use href="#i-globe"/></svg>Pencarian web</span>
-      <span><svg><use href="#i-qris"/></svg>QRIS</span>
-      <span><svg><use href="#i-wa"/></svg>WhatsApp</span>
-      <span><svg><use href="#i-calendar"/></svg>Google Kalender</span>
-      <span><svg><use href="#i-mail"/></svg>Gmail</span>
-      <span><svg><use href="#i-doc"/></svg>Google Docs</span>
-      <span><svg><use href="#i-sheet"/></svg>Google Sheets</span>
-      <span><svg><use href="#i-drive"/></svg>Google Drive</span>
-      <span><svg><use href="#i-users"/></svg>Google Kontak</span>
-      <span><svg><use href="#i-pin"/></svg>Google Maps</span>
-      <span><svg><use href="#i-globe"/></svg>Pencarian web</span>
-      <span><svg><use href="#i-qris"/></svg>QRIS</span>
-    </div>
-  </section>
-
-  <section class="section" id="untuk-siapa">
+  <section class="tools" aria-label="Layanan yang terhubung">
     <div class="wrap">
-      <div class="head" data-aos>
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-users"/></svg>Untuk siapa</span>
-        <h2 class="h2">Untuk orang yang waktunya paling mahal.</h2>
-        <p class="intro">Satu sekretaris, tiga cara memakainya. Semuanya lewat percakapan yang sama.</p>
-      </div>
-      <div class="roles stagger">
-        <article class="card role">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-store"/></svg></span>
-          <h3>Pemilik usaha</h3>
-          <p>Omzet tiap cabang tercatat rapi di Google Sheets. Pengingat bayar gaji dan setor pajak berjalan sendiri setiap bulan.</p>
-          <p class="quote">&ldquo;<b>catat omzet cabang Depok hari ini 4,2 juta</b>&rdquo;</p>
-        </article>
-        <article class="card role">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-briefcase"/></svg></span>
-          <h3>Profesional</h3>
-          <p>Notulen rapat klien langsung jadi Google Docs. Jadwal, tenggat, dan balasan email beres tanpa membuka laptop.</p>
-          <p class="quote">&ldquo;<b>balas email Bu Sinta, bilang dokumennya saya kirim besok</b>&rdquo;</p>
-        </article>
-        <article class="card role">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-crown"/></svg></span>
-          <h3>Eksekutif</h3>
-          <p>Agenda pagi sudah masuk sebelum Anda tiba di kantor. Butuh tempat menjamu tamu? Rekomendasi terdekat dan rutenya langsung dikirim.</p>
-          <p class="quote">&ldquo;<b>jadwal saya besok apa saja?</b>&rdquo;</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" id="kemampuan">
-    <div class="wrap split">
-      <div class="sticky" data-aos="left">
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-sparkle"/></svg>Kemampuan</span>
-        <h2 class="h2">Semua urusan harian, dari satu percakapan.</h2>
-        <p class="intro">Bicara seperti kepada sekretaris biasa. Tidak ada perintah yang harus dihafal: Sekretaris AI mengerti bahasa sehari-hari dan mengingat cara Anda bekerja.</p>
-        <a class="arrow-link" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20mau%20coba%20Sekretaris%20AI." rel="noopener">Coba sekarang<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
-      </div>
-
-      <ul class="bento stagger">
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-bell"/></svg></span>
-          <h3>Agenda dan pengingat</h3>
-          <p>Sekali jalan atau berulang: tiap Senin, tiap tanggal 25, tiap tahun. Ringkasan agenda dikirim setiap pagi sebelum hari Anda mulai.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-calendar"/></svg></span>
-          <h3>Kalender dan Gmail</h3>
-          <p>Cek jadwal, cari waktu kosong, kirim undangan rapat lengkap dengan tautan Google Meet, lalu baca dan balas email.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-doc"/></svg></span>
-          <h3>Notulen dan dokumen</h3>
-          <p>Ceritakan jalannya rapat, notulennya langsung jadi Google Docs. Begitu juga draf surat, penawaran, dan laporan.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-sheet"/></svg></span>
-          <h3>Catatan keuangan</h3>
-          <p>Omzet, pengeluaran, dan pesanan masuk ke Google Sheets setiap kali Anda menyebutnya, siap direkap per minggu atau per bulan.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-drive"/></svg></span>
-          <h3>Berkas dan Drive</h3>
-          <p>Kirimkan foto, PDF, atau dokumen. Isinya dirangkum, lalu disimpan rapi ke Google Drive Anda.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-send"/></svg></span>
-          <h3>Mengabari orang lain</h3>
-          <p>Pesan WhatsApp ke klien atau tim dikirim atas nama Anda. Nama di Google Kontak langsung dikenali, dan balasannya diteruskan ke Anda.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-pin"/></svg></span>
-          <h3>Lokasi dan navigasi</h3>
-          <p>Tanya tempat seperti bertanya ke orang: restoran untuk menjamu klien, SPBU, atau apotek terdekat. Rekomendasi datang bersama rute Google Maps.</p>
-        </div></li>
-        <li><div class="card cap">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-globe"/></svg></span>
-          <h3>Riset cepat</h3>
-          <p>Kurs, berita, dan harga terbaru dicari langsung dari internet, lengkap dengan sumbernya supaya bisa Anda periksa sendiri.</p>
-        </div></li>
-        <li><div class="card cap soon">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-phone"/></svg></span>
-          <div class="body">
-            <h3>Telepon langsung</h3>
-            <p>Telepon nomor sekretaris lewat WhatsApp dan bicara langsung, tanpa mengetik sepatah kata pun.</p>
-          </div>
-          <span class="badge"><svg aria-hidden="true"><use href="#i-clock"/></svg>Segera hadir</span>
-        </div></li>
+      <p>Bekerja di atas alat yang sudah Anda pakai</p>
+      <ul>
+        <li><svg aria-hidden="true"><use href="#i-wa"/></svg>WhatsApp</li>
+        <li><svg aria-hidden="true"><use href="#i-calendar"/></svg>Kalender</li>
+        <li><svg aria-hidden="true"><use href="#i-mail"/></svg>Gmail</li>
+        <li><svg aria-hidden="true"><use href="#i-doc"/></svg>Docs</li>
+        <li><svg aria-hidden="true"><use href="#i-sheet"/></svg>Sheets</li>
+        <li><svg aria-hidden="true"><use href="#i-drive"/></svg>Drive</li>
+        <li><svg aria-hidden="true"><use href="#i-users"/></svg>Kontak</li>
+        <li><svg aria-hidden="true"><use href="#i-pin"/></svg>Maps</li>
+        <li><svg aria-hidden="true"><use href="#i-globe"/></svg>Pencarian web</li>
       </ul>
     </div>
   </section>
 
-  <section class="section" id="hasil">
+  <section class="section" id="contoh">
     <div class="wrap">
       <div class="head" data-aos>
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-check-circle"/></svg>Hasil kerja</span>
-        <h2 class="h2">Yang dikerjakan bisa Anda buka dan periksa.</h2>
-        <p class="intro">Sekretaris AI tidak berhenti di balasan chat. Setiap permintaan meninggalkan hasil nyata di akun Google Anda sendiri.</p>
+        <h2 class="h2">Enam hal yang biasa Anda minta.</h2>
       </div>
 
-      <div class="proofs stagger">
-        <article class="card proof">
-          <figure>
-            <!-- notulen yang jadi Google Docs -->
-            <svg class="art" viewBox="0 0 320 168" role="img" aria-label="Ilustrasi dokumen notulen rapat dengan judul, poin keputusan, dan satu tugas yang ditandai.">
-              <rect width="320" height="168" rx="10" fill="#f6f5f2"/>
-              <rect x="0" y="0" width="320" height="26" rx="10" fill="#e9e7e1"/>
-              <rect x="0" y="16" width="320" height="10" fill="#e9e7e1"/>
-              <circle cx="16" cy="13" r="3.4" fill="#c9c6bd"/><circle cx="27" cy="13" r="3.4" fill="#c9c6bd"/><circle cx="38" cy="13" r="3.4" fill="#c9c6bd"/>
-              <rect x="56" y="9" width="104" height="8" rx="4" fill="#cfccc3"/>
-              <rect x="26" y="44" width="150" height="12" rx="4" fill="#26282b"/>
-              <rect x="26" y="66" width="94" height="6" rx="3" fill="#b9b6ad"/>
-              <rect x="26" y="86" width="268" height="6" rx="3" fill="#d2cfc7"/>
-              <rect x="26" y="100" width="238" height="6" rx="3" fill="#d2cfc7"/>
-              <rect x="26" y="114" width="258" height="6" rx="3" fill="#d2cfc7"/>
-              <rect x="26" y="134" width="180" height="18" rx="6" fill="#25d366" opacity=".16"/>
-              <path d="m32 143 3.2 3.2 6.4-6.6" fill="none" stroke="#12a150" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-              <rect x="50" y="140" width="146" height="6" rx="3" fill="#12a150" opacity=".55"/>
-            </svg>
-          </figure>
-          <div class="body">
-            <h3><svg aria-hidden="true"><use href="#i-doc"/></svg>Notulen di Google Docs</h3>
-            <p>Ceritakan rapatnya sekali. Keputusan, tenggat, dan siapa mengerjakan apa tersusun jadi dokumen yang bisa langsung Anda bagikan.</p>
+      <div class="cases stagger">
+        <article class="case">
+          <div class="screen" role="img" aria-label="Pagi hari sekretaris mengirim tiga agenda hari itu, pengguna menambah satu janji jam sebelas, dan sekretaris menyanggupi.">
+            <div class="screen-head" aria-hidden="true"><span class="avatar">S</span><b>Sekretaris AI</b></div>
+            <div class="chat" aria-hidden="true">
+              <div class="msg bot">Pagi, Pak Josh. Hari ini tiga agenda: 09.00 rapat vendor, 13.30 tinjau proyek Depok, 16.00 telepon Bu Sinta.<time>06.30</time></div>
+              <div class="msg me">tambah, jam 11 ketemu notaris<time>06.34</time></div>
+              <div class="msg bot">Sudah saya catat, jam 11.00.<time>06.34</time></div>
+            </div>
           </div>
+          <h3>Agenda pagi tanpa diminta</h3>
+          <p>Hari Anda sudah tersusun sebelum kantor buka.</p>
         </article>
 
-        <article class="card proof">
-          <figure>
-            <!-- rekap omzet yang jadi Google Sheets -->
-            <svg class="art" viewBox="0 0 320 168" role="img" aria-label="Ilustrasi lembar kerja rekap penjualan dengan baris per cabang dan satu baris total yang ditandai.">
-              <rect width="320" height="168" rx="10" fill="#f6f5f2"/>
-              <rect x="0" y="0" width="320" height="26" rx="10" fill="#e9e7e1"/>
-              <rect x="0" y="16" width="320" height="10" fill="#e9e7e1"/>
-              <circle cx="16" cy="13" r="3.4" fill="#c9c6bd"/><circle cx="27" cy="13" r="3.4" fill="#c9c6bd"/><circle cx="38" cy="13" r="3.4" fill="#c9c6bd"/>
-              <rect x="56" y="9" width="84" height="8" rx="4" fill="#cfccc3"/>
-              <g fill="none" stroke="#ddd9d0" stroke-width="1">
-                <path d="M20 42h280M20 66h280M20 90h280M20 114h280M20 138h280"/>
-                <path d="M120 42v96M200 42v96M260 42v96"/>
-              </g>
-              <rect x="20" y="42" width="280" height="24" fill="#25d366" opacity=".14"/>
-              <rect x="30" y="50" width="56" height="7" rx="3.5" fill="#12a150" opacity=".7"/>
-              <rect x="130" y="50" width="44" height="7" rx="3.5" fill="#12a150" opacity=".7"/>
-              <rect x="210" y="50" width="34" height="7" rx="3.5" fill="#12a150" opacity=".7"/>
-              <g fill="#cbc8bf">
-                <rect x="30" y="74" width="66" height="7" rx="3.5"/><rect x="130" y="74" width="50" height="7" rx="3.5"/><rect x="210" y="74" width="38" height="7" rx="3.5"/>
-                <rect x="30" y="98" width="58" height="7" rx="3.5"/><rect x="130" y="98" width="42" height="7" rx="3.5"/><rect x="210" y="98" width="30" height="7" rx="3.5"/>
-                <rect x="30" y="122" width="72" height="7" rx="3.5"/><rect x="130" y="122" width="46" height="7" rx="3.5"/><rect x="210" y="122" width="34" height="7" rx="3.5"/>
-              </g>
-              <rect x="264" y="118" width="30" height="15" rx="4" fill="#25d366" opacity=".2"/>
-              <rect x="269" y="124" width="20" height="4" rx="2" fill="#12a150"/>
-            </svg>
-          </figure>
-          <div class="body">
-            <h3><svg aria-hidden="true"><use href="#i-sheet"/></svg>Rekap di Google Sheets</h3>
-            <p>Sebut angkanya sambil jalan, barisnya bertambah sendiri. Akhir bulan tinggal minta rekapnya, bukan menyusunnya.</p>
+        <article class="case">
+          <div class="screen" role="img" aria-label="Pengguna mendiktekan hasil rapat vendor, sekretaris membalas dengan dokumen notulen di Google Docs beserta tautannya.">
+            <div class="screen-head" aria-hidden="true"><span class="avatar">S</span><b>Sekretaris AI</b></div>
+            <div class="chat" aria-hidden="true">
+              <div class="msg me">notulen rapat vendor tadi: harga naik 5%, penawaran dikirim Jumat<time>11.02</time></div>
+              <div class="msg bot">Sudah saya rapikan.
+                <span class="file"><svg><use href="#i-doc"/></svg><span>Notulen Rapat Vendor, 18 Sep</span></span>
+                <span class="url">docs.google.com/document/d/1vQ&hellip;</span><time>11.02</time></div>
+            </div>
           </div>
+          <h3>Notulen jadi dokumen</h3>
+          <p>Ceritakan sekali, hasilnya siap dibagikan.</p>
         </article>
 
-        <article class="card proof">
-          <figure>
-            <!-- rute yang jadi tautan Google Maps -->
-            <svg class="art" viewBox="0 0 320 168" role="img" aria-label="Ilustrasi peta dengan rute dari posisi Anda menuju satu tempat yang ditandai pin.">
-              <rect width="320" height="168" rx="10" fill="#101617"/>
-              <g stroke="#1e2729" stroke-width="9" fill="none" stroke-linecap="round">
-                <path d="M-10 50h340M-10 118h340M78 -10v188M222 -10v188"/>
-              </g>
-              <g fill="#161d1f">
-                <rect x="14" y="60" width="52" height="46" rx="5"/><rect x="92" y="60" width="118" height="46" rx="5"/>
-                <rect x="14" y="128" width="52" height="34" rx="5"/><rect x="92" y="128" width="118" height="34" rx="5"/>
-                <rect x="234" y="60" width="72" height="46" rx="5"/><rect x="234" y="6" width="72" height="32" rx="5"/>
-                <rect x="14" y="6" width="52" height="32" rx="5"/><rect x="92" y="6" width="118" height="32" rx="5"/>
-              </g>
-              <path d="M52 140V118h170V50h46" fill="none" stroke="#25d366" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 11"/>
-              <path d="M52 140V118h170V50h46" fill="none" stroke="#25d366" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".22"/>
-              <circle cx="52" cy="140" r="9" fill="#25d366" opacity=".2"/><circle cx="52" cy="140" r="4.6" fill="#25d366"/>
-              <g transform="translate(268 50)">
-                <circle r="16" fill="#25d366" opacity=".16"/>
-                <path d="M0-15a10.5 10.5 0 0 0-10.5 10.5C-10.5 3 0 13 0 13s10.5-10 10.5-17.5A10.5 10.5 0 0 0 0-15z" fill="#25d366"/>
-                <circle cy="-4.6" r="3.9" fill="#06170d"/>
-              </g>
-              <rect x="150" y="126" width="152" height="30" rx="8" fill="#0b1112" opacity=".92"/>
-              <rect x="162" y="134" width="76" height="6" rx="3" fill="#e6eae8"/>
-              <rect x="162" y="145" width="52" height="5" rx="2.5" fill="#25d366" opacity=".8"/>
-            </svg>
-          </figure>
-          <div class="body">
-            <h3><svg aria-hidden="true"><use href="#i-pin"/></svg>Rute di Google Maps</h3>
-            <p>Tanya tempat, dapat jawaban beserta jaraknya dan satu tautan navigasi. Tinggal ditekan, bukan dicari ulang.</p>
+        <article class="case">
+          <div class="screen" role="img" aria-label="Pengguna minta Pak Andi dikabari, sekretaris menampilkan pesan yang sudah disusun beserta tombol Kirim dan Batal.">
+            <div class="screen-head" aria-hidden="true"><span class="avatar">S</span><b>Sekretaris AI</b></div>
+            <div class="chat" aria-hidden="true">
+              <div class="msg me">kabari Pak Andi, penawaran kita kirim Jumat<time>11.04</time></div>
+              <div class="msg bot has-actions">Untuk <b>Pak Andi</b>:<br><i>&ldquo;Selamat siang Pak Andi, penawaran dari kami dikirim hari Jumat. Terima kasih.&rdquo;</i><time>11.04</time>
+                <div class="confirm">
+                  <span><svg><use href="#i-send"/></svg>Kirim</span>
+                  <span><svg><use href="#i-x"/></svg>Batal</span>
+                </div>
+              </div>
+            </div>
           </div>
+          <h3>Pesan ke klien, Anda yang setujui</h3>
+          <p>Tidak ada satu pun yang terkirim diam-diam.</p>
+        </article>
+
+        <article class="case">
+          <div class="screen" role="img" aria-label="Pengguna menyebut omzet cabang Depok, sekretaris mencatatnya ke Google Sheets dan menyebutkan total bulan ini.">
+            <div class="screen-head" aria-hidden="true"><span class="avatar">S</span><b>Sekretaris AI</b></div>
+            <div class="chat" aria-hidden="true">
+              <div class="msg me">catat omzet cabang Depok hari ini 4,2 juta<time>19.15</time></div>
+              <div class="msg bot">Tercatat.
+                <span class="file"><svg><use href="#i-sheet"/></svg><span>Omzet 2026</span></span>
+                Depok bulan ini: <b>Rp58,7 juta</b>.<time>19.15</time></div>
+            </div>
+          </div>
+          <h3>Omzet tercatat sambil jalan</h3>
+          <p>Akhir bulan tinggal minta rekapnya.</p>
+        </article>
+
+        <article class="case">
+          <div class="screen" role="img" aria-label="Pengguna menanyakan email penting hari ini, sekretaris menyebutkan dua email, lalu menyiapkan draf balasan untuk disetujui.">
+            <div class="screen-head" aria-hidden="true"><span class="avatar">S</span><b>Sekretaris AI</b></div>
+            <div class="chat" aria-hidden="true">
+              <div class="msg me">ada email penting hari ini?<time>08.12</time></div>
+              <div class="msg bot">Dua. Bu Sinta menanyakan revisi kontrak, dan invoice PT Karya jatuh tempo Jumat.<time>08.12</time></div>
+              <div class="msg me">balas Bu Sinta, revisinya besok saya kirim<time>08.13</time></div>
+              <div class="msg bot">Drafnya siap, tinggal Anda setujui.<time>08.13</time></div>
+            </div>
+          </div>
+          <h3>Email masuk, sudah diringkas</h3>
+          <p>Yang penting saja, lengkap dengan draf balasannya.</p>
+        </article>
+
+        <article class="case">
+          <div class="screen" role="img" aria-label="Pengguna mencari tempat makan siang untuk klien di dekat lokasinya, sekretaris menyebut satu restoran beserta jaraknya dan tautan rute Google Maps.">
+            <div class="screen-head" aria-hidden="true"><span class="avatar">S</span><b>Sekretaris AI</b></div>
+            <div class="chat" aria-hidden="true">
+              <div class="msg me">cari tempat makan siang buat klien dekat sini<time>11.06</time></div>
+              <div class="msg bot">Senja Kitchen, 650 m. Sering dipakai makan siang bisnis, tenang untuk ngobrol.
+                <span class="file"><svg><use href="#i-pin"/></svg><span>Buka rute di Google Maps</span></span><time>11.06</time></div>
+            </div>
+          </div>
+          <h3>Tempat dan rutenya sekalian</h3>
+          <p>Tanya seperti ke orang yang hafal kota.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <section class="section" id="cara-kerja">
+  <section class="section" id="mulai">
     <div class="wrap">
       <div class="head" data-aos>
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-bolt"/></svg>Cara mulai</span>
-        <h2 class="h2">Aktif dalam hitungan menit.</h2>
-        <p class="intro">Tidak ada formulir dan tidak ada pelatihan. Semuanya lewat WhatsApp yang sudah ada di ponsel Anda.</p>
+        <h2 class="h2">Tiga langkah, lalu sekretaris Anda aktif.</h2>
       </div>
-      <ol class="steps stagger">
-        <li><h3>Chat nomor kami</h3><p>Tekan tombol hijau di halaman ini. WhatsApp langsung terbuka ke nomor Sekretaris AI.</p></li>
-        <li><h3>Aktifkan</h3><p>Kirim kode undangan untuk mencoba 14 hari, atau langsung berlangganan dengan scan QRIS.</p></li>
-        <li><h3>Kenalan singkat</h3><p>Tiga pertanyaan saja: panggilan Anda, pekerjaan Anda, dan akun Google. Setelah itu sekretaris langsung bekerja.</p></li>
+      <ol class="start stagger">
+        <li class="step">
+          <span class="num" aria-hidden="true">1</span>
+          <figure>
+            <svg viewBox="0 0 280 150" role="img" aria-label="Ilustrasi: sebuah ponsel dengan tombol hijau WhatsApp yang sedang ditekan.">
+              <rect x="64" y="6" width="152" height="138" rx="20" fill="#0e1618" stroke="rgba(255,255,255,.16)"/>
+              <rect x="126" y="15" width="28" height="4" rx="2" fill="rgba(255,255,255,.2)"/>
+              <g fill="rgba(255,255,255,.1)">
+                <rect x="80" y="34" width="76" height="9" rx="4.5"/>
+                <rect x="80" y="49" width="56" height="9" rx="4.5"/>
+              </g>
+              <rect x="124" y="64" width="76" height="9" rx="4.5" fill="rgba(37,211,102,.24)"/>
+              <circle cx="140" cy="107" r="34" fill="#25d366" opacity=".08"/>
+              <circle cx="140" cy="107" r="26" fill="none" stroke="#25d366" stroke-width="1.5" opacity=".4"/>
+              <rect x="88" y="92" width="104" height="30" rx="15" fill="#25d366"/>
+              <g transform="translate(108 107) scale(.62)" fill="#06170d">
+                <path d="M5.47 2.38c-.3-.15-1.76-.87-2.03-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.94 1.16-.18.2-.35.22-.65.08-.3-.15-1.26-.47-2.39-1.48-.88-.79-1.48-1.76-1.66-2.06-.17-.3-.02-.46.13-.6.14-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.08 4.49.7.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.08-.12-.28-.2-.58-.34m-5.42 7.4a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.44-9.89 9.89-9.89 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.89 6.99c0 5.45-4.43 9.89-9.89 9.89m8.42-18.3A11.82 11.82 0 0 0 .05-12C-6.5-12-11.84-6.66-11.84-.11c0 2.1.55 4.14 1.59 5.95L-11.94 12l6.3-1.65a11.88 11.88 0 0 0 5.69 1.45c6.55 0 11.89-5.34 11.89-11.89 0-3.18-1.24-6.17-3.48-8.42Z"/>
+              </g>
+              <rect x="128" y="102" width="50" height="10" rx="5" fill="#06170d" opacity=".5"/>
+            </svg>
+          </figure>
+          <h3>Chat nomornya</h3>
+          <p>Tekan tombol hijau di halaman ini, WhatsApp langsung terbuka.</p>
+        </li>
+
+        <li class="step">
+          <span class="num" aria-hidden="true">2</span>
+          <figure>
+            <svg viewBox="0 0 280 150" role="img" aria-label="Ilustrasi: kartu kode undangan yang diterima, ditandai centang hijau.">
+              <path d="M52 34h176a10 10 0 0 1 10 10v14a10 10 0 0 0 0 34v14a10 10 0 0 1-10 10H52a10 10 0 0 1-10-10V92a10 10 0 0 0 0-34V44a10 10 0 0 1 10-10z" fill="#0e1618" stroke="rgba(255,255,255,.16)"/>
+              <path d="M140 40v70" stroke="rgba(255,255,255,.16)" stroke-dasharray="5 7"/>
+              <g fill="rgba(255,255,255,.14)">
+                <rect x="60" y="54" width="14" height="18" rx="4"/>
+                <rect x="80" y="54" width="14" height="18" rx="4"/>
+                <rect x="100" y="54" width="14" height="18" rx="4"/>
+                <rect x="120" y="54" width="14" height="18" rx="4"/>
+              </g>
+              <g fill="#25d366" opacity=".85">
+                <rect x="152" y="54" width="14" height="18" rx="4"/>
+                <rect x="172" y="54" width="14" height="18" rx="4"/>
+                <rect x="192" y="54" width="14" height="18" rx="4"/>
+                <rect x="212" y="54" width="14" height="18" rx="4"/>
+              </g>
+              <rect x="60" y="86" width="74" height="6" rx="3" fill="rgba(255,255,255,.1)"/>
+              <g transform="translate(196 104)">
+                <circle r="20" fill="#25d366" opacity=".16"/>
+                <circle r="13" fill="#25d366"/>
+                <path d="m-5.4 .4 3.6 3.6 7-7.4" fill="none" stroke="#06170d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </g>
+            </svg>
+          </figure>
+          <h3>Kirim kode undangan</h3>
+          <p>Gratis 14 hari terbuka saat itu juga. Belum punya kode? Minta saja di chat.</p>
+        </li>
+
+        <li class="step">
+          <span class="num" aria-hidden="true">3</span>
+          <figure>
+            <svg viewBox="0 0 280 150" role="img" aria-label="Ilustrasi: tiga pertanyaan perkenalan yang sudah terjawab, masing-masing bercentang hijau.">
+              <rect x="36" y="18" width="208" height="114" rx="14" fill="#0e1618" stroke="rgba(255,255,255,.16)"/>
+              <circle cx="64" cy="44" r="14" fill="#f4f2ee"/>
+              <text x="64" y="50" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="16" fill="#0b0b0c">S</text>
+              <rect x="88" y="37" width="64" height="7" rx="3.5" fill="rgba(255,255,255,.24)"/>
+              <rect x="88" y="50" width="42" height="6" rx="3" fill="rgba(255,255,255,.12)"/>
+              <g>
+                <rect x="60" y="74" width="120" height="9" rx="4.5" fill="rgba(255,255,255,.12)"/>
+                <path d="m196 78.5 4 4 8-8.4" fill="none" stroke="#25d366" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="60" y="94" width="96" height="9" rx="4.5" fill="rgba(255,255,255,.12)"/>
+                <path d="m196 98.5 4 4 8-8.4" fill="none" stroke="#25d366" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="60" y="114" width="108" height="9" rx="4.5" fill="rgba(37,211,102,.22)"/>
+                <path d="m196 118.5 4 4 8-8.4" fill="none" stroke="#25d366" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+              </g>
+            </svg>
+          </figure>
+          <h3>Kenalan singkat</h3>
+          <p>Panggilan Anda, pekerjaan, dan akun Google. Setelah itu tinggal minta.</p>
+        </li>
       </ol>
     </div>
   </section>
 
-  <section class="section control" id="kendali">
+  <section class="section trust" id="kendali">
     <div class="wrap">
-      <div class="head" data-aos>
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-shield"/></svg>Kendali dan privasi</span>
-        <h2 class="h2">Dibuat untuk dipercaya urusan penting.</h2>
-        <p class="intro">Sekretaris yang baik tidak bertindak sendiri. Sekretaris AI yang menyiapkan, Anda yang memutuskan.</p>
-      </div>
-      <div class="pledges stagger">
-        <div class="card pledge">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-check-circle"/></svg></span>
-          <div>
-            <h3>Tidak ada yang terkirim diam-diam</h3>
-            <p>Email, undangan rapat, dan pesan ke orang lain selalu ditampilkan lebih dulu, dan menunggu Anda menekan Kirim.</p>
-          </div>
-        </div>
-        <div class="card pledge">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-lock"/></svg></span>
-          <div>
-            <h3>Login Google resmi</h3>
-            <p>Kami tidak pernah melihat password Anda. Aksesnya bisa Anda cabut kapan saja, langsung dari chat.</p>
-          </div>
-        </div>
-        <div class="card pledge">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-database"/></svg></span>
-          <div>
-            <h3>Data Anda tetap milik Anda</h3>
-            <p>Tidak dijual dan tidak dipakai untuk iklan. Ketik <b>HAPUS</b> kapan saja untuk menghapus semuanya.</p>
-          </div>
-        </div>
-        <div class="card pledge">
-          <span class="tile" aria-hidden="true"><svg><use href="#i-wallet"/></svg></span>
-          <div>
-            <h3>Bayar tanpa jebakan</h3>
-            <p>QRIS dari m-banking atau e-wallet apa pun. Tidak ada potong otomatis &mdash; Anda sendiri yang memutuskan memperpanjang.</p>
-          </div>
-        </div>
-      </div>
+      <ul class="pledges">
+        <li><svg aria-hidden="true"><use href="#i-check-circle"/></svg><b>Menunggu persetujuan Anda</b>Email, undangan, dan pesan ke orang lain ditampilkan dulu.</li>
+        <li><svg aria-hidden="true"><use href="#i-lock"/></svg><b>Login Google resmi</b>Password Anda tidak pernah kami lihat, aksesnya bisa dicabut kapan saja.</li>
+        <li><svg aria-hidden="true"><use href="#i-database"/></svg><b>Data tetap milik Anda</b>Tidak dijual, tidak untuk iklan. Ketik HAPUS untuk menghapus semuanya.</li>
+      </ul>
       <a class="arrow-link" href="privasi.html">Baca kebijakan privasi<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
     </div>
   </section>
@@ -427,15 +326,13 @@
   <section class="section" id="harga">
     <div class="wrap">
       <div class="head" data-aos>
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-wallet"/></svg>Harga</span>
         <h2 class="h2">Lebih hemat daripada menggaji asisten.</h2>
-        <p class="intro">Siap sejak subuh sampai larut, tidak pernah cuti, dan bisa Anda coba dulu sebelum membayar sepeser pun.</p>
+        <p class="intro">Siap sejak subuh sampai larut, tidak pernah cuti, dan bisa dicoba dulu sebelum membayar.</p>
       </div>
       <div class="plans stagger">
         <div class="card plan">
-          <p class="plan-name"><svg aria-hidden="true"><use href="#i-sparkle"/></svg>Coba gratis</p>
-          <p class="plan-for">Rasakan dulu tanpa komitmen.</p>
-          <p class="price">Rp0<span class="price-per">selama 14 hari</span></p>
+          <p class="plan-name">Coba gratis</p>
+          <p class="price">Rp0<span class="price-per">14 hari</span></p>
           <ul>
             <li><svg aria-hidden="true"><use href="#i-check"/></svg>Semua fitur sekretaris harian</li>
             <li><svg aria-hidden="true"><use href="#i-check"/></svg>Masuk dengan kode undangan</li>
@@ -445,16 +342,13 @@
         </div>
 
         <div class="card plan featured">
-          <span class="ribbon"><svg aria-hidden="true"><use href="#i-sparkle"/></svg>Rekomendasi kami</span>
-          <p class="plan-name"><svg aria-hidden="true"><use href="#i-briefcase"/></svg>Profesional</p>
-          <p class="plan-for">Untuk profesional dan pemilik usaha.</p>
+          <p class="plan-name">Profesional</p>
           <p class="price">Rp500.000<span class="price-per">per bulan</span></p>
           <ul>
-            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Semua fitur sekretaris harian</li>
-            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Google Kalender, Gmail, Drive, dan Kontak</li>
-            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Notulen di Google Docs, catatan di Sheets</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Semua yang Anda lihat di atas</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Kalender, Gmail, Drive, dan Kontak</li>
             <li><svg aria-hidden="true"><use href="#i-check"/></svg>Kirim pesan ke klien dan tim</li>
-            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Ringkasan agenda setiap pagi</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Agenda pagi setiap hari</li>
           </ul>
           <a class="btn btn-wa" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20mau%20berlangganan%20paket%20Profesional." rel="noopener">
             <svg aria-hidden="true"><use href="#i-wa"/></svg>Mulai berlangganan
@@ -462,51 +356,41 @@
         </div>
 
         <div class="card plan">
-          <p class="plan-name"><svg aria-hidden="true"><use href="#i-crown"/></svg>Eksekutif</p>
-          <p class="plan-for">Untuk eksekutif dengan jadwal padat.</p>
+          <p class="plan-name">Eksekutif</p>
           <p class="price">Rp1.000.000<span class="price-per">per bulan</span></p>
           <ul>
             <li><svg aria-hidden="true"><use href="#i-check"/></svg>Percakapan tanpa batas, kapan saja</li>
-            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Sekretaris AI menyapa lebih dulu</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Sekretaris menyapa lebih dulu</li>
             <li><svg aria-hidden="true"><use href="#i-check"/></svg>Pemasangan dibantu tim kami</li>
           </ul>
           <a class="btn btn-ghost" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20tertarik%20paket%20Eksekutif." rel="noopener">Hubungi kami</a>
         </div>
       </div>
-      <p class="price-note"><svg aria-hidden="true"><use href="#i-qris"/></svg>Harga dalam Rupiah. Pembayaran lewat QRIS, tanpa perpanjangan otomatis.</p>
+      <p class="price-note"><svg aria-hidden="true"><use href="#i-qris"/></svg>Pembayaran lewat QRIS dari m-banking atau e-wallet apa pun, tanpa perpanjangan otomatis.</p>
     </div>
   </section>
 
   <section class="section" id="pertanyaan">
     <div class="wrap">
       <div class="head" data-aos>
-        <span class="eyebrow"><svg aria-hidden="true"><use href="#i-chat"/></svg>Tanya jawab</span>
         <h2 class="h2">Pertanyaan yang sering muncul.</h2>
       </div>
       <div class="qa stagger">
         <details open>
-          <summary>Apakah saya perlu memasang aplikasi?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
-          <p class="answer">Tidak. Semuanya lewat WhatsApp yang sudah ada di ponsel Anda. Tekan tombol chat di halaman ini, dan Sekretaris AI langsung membalas.</p>
+          <summary>Perlu pasang aplikasi?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
+          <p class="answer">Tidak. Semuanya lewat WhatsApp yang sudah ada di ponsel Anda. Tekan tombol hijau di halaman ini, dan sekretaris langsung membalas.</p>
         </details>
         <details>
           <summary>Bagaimana cara mencobanya gratis?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
-          <p class="answer">Kirim kode undangan di chat, lalu semua fitur terbuka selama 14 hari. Belum punya kode? Tanyakan saja langsung di WhatsApp.</p>
-        </details>
-        <details>
-          <summary>Bisakah pesan dikirim atas nama saya?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
-          <p class="answer">Bisa, ke klien maupun tim Anda. Setiap pesan ditampilkan lebih dulu dan baru terkirim setelah Anda menekan Kirim. Balasan dari mereka diteruskan ke Anda.</p>
-        </details>
-        <details>
-          <summary>Apakah sekretarisnya bisa ditelepon?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
-          <p class="answer">Belum. Telepon langsung lewat WhatsApp sedang kami siapkan. Untuk sekarang, semua permintaan dikirim lewat chat.</p>
+          <p class="answer">Kirim kode undangan di chat, lalu semua fitur terbuka 14 hari. Belum punya kode? Tanyakan saja langsung di WhatsApp.</p>
         </details>
         <details>
           <summary>Apa yang terjadi dengan data saya?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
-          <p class="answer">Pesan dan dokumen disimpan di server kami, dan diproses oleh penyedia AI untuk menyusun jawaban. Kami tidak menjualnya dan tidak memakainya untuk iklan. Ketik HAPUS kapan saja untuk menghapus semuanya.</p>
+          <p class="answer">Pesan dan dokumen disimpan di server kami, dan diproses penyedia AI untuk menyusun jawaban. Tidak dijual dan tidak dipakai untuk iklan. Ketik HAPUS kapan saja untuk menghapus semuanya.</p>
         </details>
         <details>
           <summary>Bagaimana cara membayar dan berhenti?<span class="sign" aria-hidden="true"><svg><use href="#i-plus"/></svg></span></summary>
-          <p class="answer">Scan QRIS dari m-banking atau e-wallet apa pun. Tidak ada potongan otomatis: bila tidak diperpanjang, langganan berhenti dengan sendirinya dan data Anda tetap tersimpan.</p>
+          <p class="answer">Scan QRIS dari m-banking atau e-wallet apa pun. Tidak ada potongan otomatis: bila tidak diperpanjang, langganan berhenti sendiri dan data Anda tetap tersimpan.</p>
         </details>
       </div>
     </div>
@@ -515,9 +399,8 @@
   <section class="closing">
     <div class="wrap">
       <div class="closing-panel" data-aos="zoom">
-        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Online sekarang</span>
         <h2 class="h2">Sekretaris harian Anda sudah menunggu di WhatsApp.</h2>
-        <p>Kirim pesan pertama sekarang. Tanpa mendaftar, tanpa aplikasi, tanpa menunggu.</p>
+        <p>Kirim pesan pertama sekarang. Tidak sampai lima menit sampai sekretaris Anda bekerja.</p>
         <div class="cta-row">
           <a class="btn btn-wa" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20mau%20coba%20Sekretaris%20AI." rel="noopener">
             <svg aria-hidden="true"><use href="#i-wa"/></svg>Mulai chat di WhatsApp
@@ -537,24 +420,18 @@
           <span class="brand-mark" aria-hidden="true">S</span>
           <span class="brand-name">Sekretaris AI</span>
         </a>
-        <p>Sekretaris harian untuk profesional, pemilik usaha, dan eksekutif di Indonesia. Bekerja langsung dari WhatsApp, tanpa aplikasi tambahan.</p>
+        <p>Sekretaris harian untuk profesional, pemilik usaha, dan eksekutif di Indonesia. Bekerja langsung dari WhatsApp.</p>
       </div>
       <div>
-        <h4>Jelajahi</h4>
+        <a class="foot-wa" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20mau%20coba%20Sekretaris%20AI." rel="noopener">
+          <svg aria-hidden="true"><use href="#i-wa"/></svg>Chat di WhatsApp
+        </a>
         <nav aria-label="Tautan halaman">
-          <a href="#kemampuan">Kemampuan</a>
-          <a href="#hasil">Hasil kerja</a>
+          <a href="#contoh">Contoh</a>
           <a href="#harga">Harga</a>
           <a href="#pertanyaan">Tanya jawab</a>
           <a href="privasi.html">Kebijakan privasi</a>
         </nav>
-      </div>
-      <div>
-        <h4>Mulai</h4>
-        <a class="foot-wa" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20mau%20coba%20Sekretaris%20AI." rel="noopener">
-          <svg aria-hidden="true"><use href="#i-wa"/></svg>Chat di WhatsApp
-        </a>
-        <p>Gratis 14 hari dengan kode undangan. Selebihnya mulai Rp500.000 per bulan.</p>
       </div>
     </div>
     <div class="foot-bottom">

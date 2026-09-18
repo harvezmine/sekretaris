@@ -3,6 +3,7 @@ import { DEFAULT_ASSISTANT_NAME } from "../persona/catalog.js";
 import { eventLine, listEvents, type CalendarEvent } from "../google/calendar.js";
 import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
 import { searchMail, senderName } from "../google/gmail.js";
+import { tasksDueToday, type Task } from "../google/tasks.js";
 import { formatClock, formatDay, isoInZone } from "../util.js";
 
 /** The user's local calendar day and clock, derived from their time zone. */
@@ -90,14 +91,38 @@ export async function calendarDays(user: UserRow, now: Date): Promise<CalendarRe
   }
 }
 
+/** Tasks the user keeps in Google Tasks: no hour of their own, so they sit above the timed agenda. */
+export async function dueTasks(user: UserRow, now: Date): Promise<Task[]> {
+  if (!googleEnabled()) return [];
+  const account = await getAccount(user.id);
+  if (account?.status !== "active" || !account.scopes.includes(SCOPE.tasks)) return [];
+  try {
+    return await tasksDueToday(user.id, user.timezone, now);
+  } catch {
+    return [];
+  }
+}
+
+export function taskLines(tasks: Task[], today: string): string[] {
+  return tasks.map((t) => `• ✅ ${t.title}${t.due && t.due < today ? " _(lewat tenggat)_" : ""}`);
+}
+
 export async function agendaText(user: UserRow, now = new Date()): Promise<string> {
-  const [today, tomorrow, calendar] = await Promise.all([agendaFor(user, 0, now), agendaFor(user, 1, now), calendarDays(user, now)]);
+  const [today, tomorrow, calendar, tasks] = await Promise.all([
+    agendaFor(user, 0, now),
+    agendaFor(user, 1, now),
+    calendarDays(user, now),
+    dueTasks(user, now),
+  ]);
   const icons = Boolean(calendar);
   const entries = [...reminderEntries(today, user.timezone, now, icons), ...eventEntries(calendar?.today ?? [], user.timezone, now)].sort(
     (a, b) => a.sort - b.sort,
   );
   const lines = [`📅 *Agenda hari ini*, ${dayFmt(now, user.timezone)}`];
-  lines.push(...(entries.length ? entries.map((e) => e.line) : ["Belum ada agenda untuk hari ini."]));
+  lines.push(
+    ...(entries.length || tasks.length ? entries.map((e) => e.line) : ["Belum ada agenda untuk hari ini."]),
+    ...taskLines(tasks, localNow(user.timezone, now).date),
+  );
   if (calendar?.note) lines.push(calendar.note);
   const next = [
     ...tomorrow.map((r) => ({ at: r.fireAt, text: `${timeFmt(r.fireAt, user.timezone)} ${r.text}` })),
@@ -127,7 +152,12 @@ export async function importantMail(user: UserRow): Promise<string[]> {
 }
 
 export async function briefingText(user: UserRow, now = new Date()): Promise<string> {
-  const [today, calendar, mail] = await Promise.all([agendaFor(user, 0, now), calendarDays(user, now), importantMail(user)]);
+  const [today, calendar, mail, tasks] = await Promise.all([
+    agendaFor(user, 0, now),
+    calendarDays(user, now),
+    importantMail(user),
+    dueTasks(user, now),
+  ]);
   const upcoming = [
     ...reminderEntries(today.filter((i) => i.fireAt.getTime() > now.getTime()), user.timezone, now, Boolean(calendar)),
     ...eventEntries((calendar?.today ?? []).filter((e) => e.allDay || e.end.getTime() > now.getTime()), user.timezone, now),
@@ -136,8 +166,11 @@ export async function briefingText(user: UserRow, now = new Date()): Promise<str
   return [
     `☀️ Selamat pagi${who ? `, ${who}` : ""}!`,
     "",
-    upcoming.length ? `*Agenda hari ini* (${upcoming.length}):` : "Hari ini belum ada agenda. Kalau ada janji atau tenggat, kabari saya supaya saya ingatkan.",
+    upcoming.length || tasks.length
+      ? `*Agenda hari ini* (${upcoming.length + tasks.length}):`
+      : "Hari ini belum ada agenda. Kalau ada janji atau tenggat, kabari saya supaya saya ingatkan.",
     ...upcoming.map((e) => e.line),
+    ...taskLines(tasks, localNow(user.timezone, now).date),
     ...(calendar?.note ? [calendar.note] : []),
     ...mail,
     "",

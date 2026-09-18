@@ -3,7 +3,7 @@ import type { Agent } from "../agent/run.js";
 import type { UserProfile, UserRow } from "../db/index.js";
 import { eventLine } from "../google/calendar.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona, personaBlock } from "../persona/catalog.js";
-import { agendaFor, calendarDays, importantMail, localNow } from "../profile/agenda.js";
+import { agendaFor, calendarDays, dueTasks, importantMail, localNow } from "../profile/agenda.js";
 import { formatClock, formatDay } from "../util.js";
 
 /**
@@ -90,11 +90,12 @@ function clocksIn(text: string): string[] {
 /** What the check-in may talk about: the user's reminders and, when connected, their calendar and important mail. */
 export async function routineFacts(user: UserRow, kind: RoutineKind, now = new Date()): Promise<RoutineFacts> {
   const tz = user.timezone;
-  const [today, tomorrow, calendar, mail] = await Promise.all([
+  const [today, tomorrow, calendar, mail, tasks] = await Promise.all([
     agendaFor(user, 0, now),
     agendaFor(user, 1, now),
     calendarDays(user, now),
     kind === "morning" ? importantMail(user) : Promise.resolve([]),
+    dueTasks(user, now),
   ]);
   const upcoming = (items: { fireAt: Date; text: string; status: string }[], from: Date | undefined) =>
     items.filter((i) => i.status !== "cancelled" && (!from || i.fireAt.getTime() > from.getTime()));
@@ -108,7 +109,8 @@ export async function routineFacts(user: UserRow, kind: RoutineKind, now = new D
       .map((x) => x.line);
 
   const todayEvents = (calendar?.today ?? []).filter((e) => e.allDay || e.end.getTime() > now.getTime());
-  const todayLines = lines(upcoming(today, now), todayEvents);
+  // Tasks carry no hour, so they go after the timed things and are labelled, or the model invents a time for them.
+  const todayLines = [...lines(upcoming(today, now), todayEvents), ...tasks.map((t) => `tugas: ${t.title}`)];
   const tomorrowLines = lines(upcoming(tomorrow, undefined), calendar?.tomorrow ?? []);
   const mailLines = mail.filter((l) => l.startsWith("• ")).map((l) => l.slice(2).replace(" — ", ": "));
   const times = new Set([...todayLines, ...tomorrowLines].flatMap(clocksIn));

@@ -23,6 +23,8 @@ import { CONNECT_MINUTES, connectUrlFor } from "../google/connect.js";
 import { createDoc } from "../google/docs.js";
 import { DriveUnsupportedError, importDriveFile, saveToDrive, searchDrive } from "../google/drive.js";
 import { appendRow, listSheets, readRows } from "../google/sheets.js";
+import { createForm, FormError, listForms, readResponses } from "../google/forms.js";
+import { addTask, completeTask, openTasks, TaskNotFoundError } from "../google/tasks.js";
 import { mailAttachment, readMail, replySubject, searchMail, senderName } from "../google/gmail.js";
 import { bareAddress, validAddress } from "../google/mime.js";
 import { formatDateTime, isoInZone } from "../util.js";
@@ -230,6 +232,93 @@ const DEFS: Record<string, { service: GoogleService | "any"; def: BetaTool }> = 
       },
     },
   },
+  task_add: {
+    service: "tasks",
+    def: {
+      name: "task_add",
+      description: [
+        "Put something on the user's Google Tasks list: the to-do list they see beside Gmail and Calendar on a laptop.",
+        "Use this for work that has to get done but has no particular hour (\"siapkan draft kontrak\", \"telepon supplier\"). Anything that must arrive at a time of day is a reminder instead, because Google Tasks keeps only the date and drops the time. When they give both a task and an hour, make the reminder and say the task is on the list for that day.",
+      ].join("\n\n"),
+      input_schema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "What has to be done, in the user's own words." },
+          due: { type: "string", description: "The day it is due, YYYY-MM-DD in the user's time zone. Leave out when they did not say." },
+          notes: { type: "string", description: "Extra detail worth keeping, at most a few lines." },
+          list: { type: "string", description: "Name of one of their task lists. Leave out for the default list." },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  form_create: {
+    service: "forms",
+    def: {
+      name: "form_create",
+      description: [
+        "Make a Google Form the user can send to a group: pesanan, absensi, RSVP, survei pelanggan. You get back a link to share and a link to edit.",
+        'Write the questions yourself from what they asked for, in their language, and keep them few and plain: a form nobody finishes collects nothing. Types: "text" for a short answer, "paragraph" for a long one, "choice" for one of several options, "checkbox" for several, "date" for a day. choice and checkbox need at least two options.',
+        "Anyone holding the link can answer, so say that in one short sentence when you hand it over. If the result says public is false, tell them the link may only work for their own account and offer to try again.",
+      ].join("\n\n"),
+      input_schema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short name; this is also how the user will refer to it later." },
+          description: { type: "string", description: "One or two lines under the title, when it helps the person answering." },
+          questions: {
+            type: "array",
+            description: "In the order they should be answered, at most 20.",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                type: { type: "string", enum: ["text", "paragraph", "choice", "checkbox", "date"] },
+                options: { type: "array", items: { type: "string" }, description: "For choice and checkbox." },
+                required: { type: "boolean" },
+              },
+              required: ["title", "type"],
+            },
+          },
+        },
+        required: ["title", "questions"],
+      },
+    },
+  },
+  form_responses: {
+    service: "forms",
+    def: {
+      name: "form_responses",
+      description:
+        "Read what came in to one of the forms you made: how many answered, the count per option, and the latest few written answers. Give the form roughly by name. Omit form to list the forms that exist. Answer with the numbers that matter, not every row.",
+      input_schema: { type: "object", properties: { form: { type: "string" } } },
+    },
+  },
+  task_list: {
+    service: "tasks",
+    def: {
+      name: "task_list",
+      description:
+        "Read the user's open Google Tasks, soonest first. Use it when they ask what is on their plate, or before answering about their day. due_before limits it to tasks due on or before that day (YYYY-MM-DD), which is how you get \"what is due today\".",
+      input_schema: {
+        type: "object",
+        properties: {
+          due_before: { type: "string", description: "YYYY-MM-DD in the user's time zone." },
+          list: { type: "string" },
+          max: { type: "integer", description: "1-50, default 20." },
+        },
+      },
+    },
+  },
+  task_done: {
+    service: "tasks",
+    def: {
+      name: "task_done",
+      description:
+        "Tick a task off when the user says they finished it (\"kontraknya sudah\", \"sudah saya telepon supplier\"). Give the title roughly as they said it; the closest open task is the one that gets completed. Say which one you ticked off so they can correct you.",
+      input_schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+    },
+  },
   sheet_read: {
     service: "drive",
     def: {
@@ -298,9 +387,45 @@ export const googleInputs = {
     fields: z.record(z.string().max(40), z.union([z.string().max(500), z.number()])),
   }),
   sheet_read: z.object({ sheet: z.string().max(100).optional(), limit: z.coerce.number().int().optional() }),
+  task_add: z.object({
+    title: z.string().min(1).max(500),
+    due: z.string().max(40).optional(),
+    notes: z.string().max(2000).optional(),
+    list: z.string().max(100).optional(),
+  }),
+  task_list: z.object({
+    due_before: z.string().max(40).optional(),
+    list: z.string().max(100).optional(),
+    max: z.coerce.number().int().optional(),
+  }),
+  task_done: z.object({ title: z.string().min(1).max(500) }),
+  form_create: z.object({
+    title: z.string().min(1).max(300),
+    description: z.string().max(2000).optional(),
+    questions: z
+      .array(
+        z.object({
+          title: z.string().min(1).max(300),
+          type: z.enum(["text", "paragraph", "choice", "checkbox", "date"]),
+          options: z.array(z.string().max(200)).max(20).optional(),
+          required: z.boolean().optional(),
+        }),
+      )
+      .min(1)
+      .max(20),
+  }),
+  form_responses: z.object({ form: z.string().max(300).optional() }),
 } as const;
 
 type GoogleToolName = keyof typeof googleInputs;
+
+/** A plain calendar day. Google Tasks holds nothing finer, so anything with a time is cut back to its date. */
+function plainDay(value: string): string | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!m) return undefined;
+  const day = `${m[1]}-${m[2]}-${m[3]}`;
+  return Number.isNaN(Date.parse(`${day}T00:00:00Z`)) ? undefined : day;
+}
 
 /** ISO 8601 with an explicit offset; a bare local time is ambiguous and refused. */
 function parseIso(value: string, field: string): Date | string {
@@ -592,6 +717,93 @@ export const googleHandlers: {
         added: result.row,
         ...(result.sheet.link ? { link: result.sheet.link } : {}),
       });
+    });
+  },
+
+  async task_add({ user }, { title, due, notes, list }) {
+    return guard(async () => {
+      const day = due ? plainDay(due) : undefined;
+      if (due && !day) return fail("Tanggalnya belum jelas. Pakai format YYYY-MM-DD.");
+      const task = await addTask(user.id, { title, ...(day ? { due: day } : {}), ...(notes ? { notes } : {}), ...(list ? { list } : {}) });
+      return ok({
+        added: task.title,
+        list: task.listTitle,
+        ...(task.due ? { due: task.due, note: "Google Tasks menyimpan tanggal saja, tanpa jam." } : {}),
+      });
+    });
+  },
+
+  async form_create({ user }, { title, description, questions }) {
+    return guard(async () => {
+      try {
+        const form = await createForm(user.id, {
+          title,
+          ...(description ? { description } : {}),
+          questions: questions.map((q) => ({
+            title: q.title,
+            type: q.type,
+            ...(q.options ? { options: q.options } : {}),
+            ...(q.required === undefined ? {} : { required: q.required }),
+          })),
+        });
+        return ok({
+          created: form.title,
+          share_link: form.responderUri,
+          edit_link: form.editUri,
+          questions: questions.length,
+          public: form.public,
+          ...(form.public ? {} : { warning: "Formulir belum bisa dibuka orang lain; izin berbaginya ditolak Google." }),
+        });
+      } catch (err) {
+        if (err instanceof FormError) return fail(err.message);
+        throw err;
+      }
+    });
+  },
+
+  async form_responses({ user }, { form }) {
+    return guard(async () => {
+      if (!form) {
+        const forms = await listForms(user.id);
+        if (!forms.length) return ok("Belum ada formulir. Buat yang pertama dengan form_create.");
+        return ok(forms.map((f) => ({ form: f.title, link: f.responderUri })));
+      }
+      const found = await readResponses(user.id, form);
+      if (!found) return ok(`Belum ada formulir bernama "${form}".`);
+      if (!found.total) return ok({ form: found.form.title, total: 0, note: "Belum ada yang mengisi.", link: found.form.responderUri });
+      return ok({
+        form: found.form.title,
+        total: found.total,
+        ...(found.lastAt ? { last_answer_at: formatDateTime(new Date(found.lastAt), user.timezone) } : {}),
+        questions: found.questions,
+        link: found.form.responderUri,
+      });
+    });
+  },
+
+  async task_list({ user }, { due_before, list, max }) {
+    return guard(async () => {
+      const day = due_before ? plainDay(due_before) : undefined;
+      if (due_before && !day) return fail("Tanggalnya belum jelas. Pakai format YYYY-MM-DD.");
+      const tasks = await openTasks(user.id, {
+        ...(day ? { dueBefore: day } : {}),
+        ...(list ? { list } : {}),
+        ...(max ? { max } : {}),
+      });
+      if (!tasks.length) return ok(day ? `Tidak ada tugas yang jatuh tempo sampai ${day}.` : "Tidak ada tugas yang masih terbuka.");
+      return ok(tasks.map((t) => ({ title: t.title, ...(t.due ? { due: t.due } : {}), list: t.listTitle, ...(t.notes ? { notes: t.notes } : {}) })));
+    });
+  },
+
+  async task_done({ user }, { title }) {
+    return guard(async () => {
+      try {
+        const task = await completeTask(user.id, title);
+        return ok({ completed: task.title, list: task.listTitle });
+      } catch (err) {
+        if (err instanceof TaskNotFoundError) return fail(`${err.message} Sebutkan judulnya lebih mirip, atau lihat dulu dengan task_list.`);
+        throw err;
+      }
     });
   },
 

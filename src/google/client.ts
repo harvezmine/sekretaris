@@ -10,8 +10,8 @@ import { publicBaseUrl } from "../uploads/links.js";
  * Google refuses the refresh token (weekly in Testing mode).
  */
 
-export type GoogleService = "calendar" | "gmail" | "drive" | "contacts";
-export const ALL_SERVICES: readonly GoogleService[] = ["calendar", "gmail", "drive", "contacts"];
+export type GoogleService = "calendar" | "gmail" | "drive" | "contacts" | "tasks" | "forms";
+export const ALL_SERVICES: readonly GoogleService[] = ["calendar", "gmail", "drive", "contacts", "tasks", "forms"];
 
 export const SCOPE = {
   calendar: "https://www.googleapis.com/auth/calendar.events",
@@ -20,6 +20,9 @@ export const SCOPE = {
   driveFile: "https://www.googleapis.com/auth/drive.file",
   driveRead: "https://www.googleapis.com/auth/drive.readonly",
   contacts: "https://www.googleapis.com/auth/contacts.readonly",
+  tasks: "https://www.googleapis.com/auth/tasks",
+  formsBody: "https://www.googleapis.com/auth/forms.body",
+  formsResponses: "https://www.googleapis.com/auth/forms.responses.readonly",
 } as const;
 
 export const ENDPOINTS = {
@@ -32,6 +35,8 @@ export const ENDPOINTS = {
   people: "https://people.googleapis.com/v1",
   sheets: "https://sheets.googleapis.com/v4",
   driveUpload: "https://www.googleapis.com/upload/drive/v3",
+  tasks: "https://tasks.googleapis.com/tasks/v1",
+  forms: "https://forms.googleapis.com/v1",
 } as const;
 
 export const SERVICE_LABEL: Record<GoogleService, string> = {
@@ -39,6 +44,8 @@ export const SERVICE_LABEL: Record<GoogleService, string> = {
   gmail: "Gmail",
   drive: "Google Drive",
   contacts: "Google Kontak",
+  tasks: "Google Tasks",
+  forms: "Google Formulir",
 };
 
 type Fetch = typeof fetch;
@@ -70,6 +77,11 @@ export function scopesFor(service: GoogleService): string[] {
       return [SCOPE.driveFile, ...(config.GOOGLE_DRIVE_FULL ? [SCOPE.driveRead] : [])];
     case "contacts":
       return [SCOPE.contacts];
+    case "tasks":
+      return [SCOPE.tasks];
+    // Drive comes along because publishing a form and sharing its link are Drive operations.
+    case "forms":
+      return [SCOPE.formsBody, SCOPE.formsResponses, SCOPE.driveFile];
   }
 }
 
@@ -165,7 +177,8 @@ export async function beginAuth(userId: string, services: readonly GoogleService
   await sql`
     insert into oauth_states (id, user_id, services, code_verifier) values (${state}, ${userId}, ${services as string[]}, ${verifier})
   `;
-  const scopes = ["openid", "email", ...services.flatMap(scopesFor)];
+  // Services can share a scope (a form is published through Drive), and Google should be asked for each one once.
+  const scopes = [...new Set(["openid", "email", ...services.flatMap(scopesFor)])];
   const url = new URL(ENDPOINTS.auth);
   url.search = new URLSearchParams({
     client_id: config.GOOGLE_CLIENT_ID,
@@ -371,5 +384,7 @@ export function describeAccess(account: Pick<GoogleAccount, "scopes">): string[]
     out.push(`drive (${has(SCOPE.driveRead) ? "search and read all files" : "only files Milo created"}${has(SCOPE.driveFile) ? ", save files" : ""})`);
   }
   if (has(SCOPE.contacts)) out.push("contacts (look up the user's own Google contacts)");
+  if (has(SCOPE.tasks)) out.push("tasks (read, add and tick off their Google Tasks; a task keeps a date, never a time)");
+  if (has(SCOPE.formsBody)) out.push("forms (create a Google Form anyone can answer, and read what came in)");
   return out;
 }

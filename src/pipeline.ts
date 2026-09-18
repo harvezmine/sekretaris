@@ -934,6 +934,8 @@ export class Pipeline {
       ...(result.granted.includes("calendar") ? ["agenda saya minggu ini apa?"] : []),
       ...(result.granted.includes("gmail") ? ["ada email penting hari ini?"] : []),
       ...(result.granted.includes("drive") ? ["cari file proposal di Drive"] : []),
+      ...(result.granted.includes("tasks") ? ["catat tugas: siapkan draft kontrak, besok"] : []),
+      ...(result.granted.includes("forms") ? ["buatkan form pesanan: nama, nomor HP, jumlah"] : []),
     ];
     await closeSessions(user.id);
     await this.d.outbox.text(

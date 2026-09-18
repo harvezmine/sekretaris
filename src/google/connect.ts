@@ -49,10 +49,14 @@ function serviceDetail(service: GoogleService): string {
         : "Simpan file dari WhatsApp ke folder Milo di Drive, dan baca file yang dibuat Milo.";
     case "contacts":
       return "Cari nomor dan email orang dari kontak Google Anda, jadi Anda tidak perlu mengetik nomornya. Hanya dibaca, tidak diubah.";
+    case "tasks":
+      return "Tugas yang Anda sebut lewat chat masuk ke Google Tasks, jadi terlihat juga di Gmail dan Kalender saat Anda buka laptop.";
+    case "forms":
+      return "Buat formulir pesanan, absensi, atau survei lewat chat, lalu saya bacakan ringkasan jawabannya. Hanya formulir buatan saya yang bisa saya buka.";
   }
 }
 
-const EMOJI: Record<GoogleService, string> = { calendar: "📅", gmail: "📧", drive: "📁", contacts: "👤" };
+const EMOJI: Record<GoogleService, string> = { calendar: "📅", gmail: "📧", drive: "📁", contacts: "👤", tasks: "✅", forms: "📝" };
 
 function connectPage(opts: { assistantName: string; expiresText: string; token: string; selected: GoogleService[]; note?: string }): string {
   const rows = enabledServices()

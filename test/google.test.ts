@@ -31,12 +31,12 @@ import { tinyPdf } from "./helpers.ts";
 const dbEnabled = Boolean(process.env.TEST_DATABASE_URL);
 const TZ = "Asia/Jakarta";
 const SHEET = "application/vnd.google-apps.spreadsheet";
-const ALL_SCOPES = ["openid", "email", SCOPE.calendar, SCOPE.gmailSend, SCOPE.gmailRead, SCOPE.driveFile, SCOPE.driveRead, SCOPE.contacts];
+const ALL_SCOPES = ["openid", "email", SCOPE.calendar, SCOPE.gmailSend, SCOPE.gmailRead, SCOPE.driveFile, SCOPE.driveRead, SCOPE.contacts, SCOPE.tasks, SCOPE.formsBody, SCOPE.formsResponses];
 
 Object.assign(config, {
   GOOGLE_CLIENT_ID: "cid.apps.googleusercontent.com",
   GOOGLE_CLIENT_SECRET: "google-client-secret",
-  GOOGLE_SERVICES: "calendar,gmail,drive,contacts",
+  GOOGLE_SERVICES: "calendar,gmail,drive,contacts,tasks,forms",
   GOOGLE_GMAIL_READ: true,
   GOOGLE_DRIVE_FULL: true,
   PUBLIC_BASE_URL: "https://milo.example.com",
@@ -69,6 +69,13 @@ class FakeGoogle {
   people: Record<string, unknown>[] = [];
   warmups = 0;
   sheets: { id: string; slug: string; name: string; values: unknown[][] }[] = [];
+  forms: Record<string, { title: string; description?: string; items: { title: string; questionId: string; choice: boolean }[]; published: boolean }> = {};
+  formResponses: Record<string, { createTime: string; answers: Record<string, { textAnswers: { answers: { value: string }[] } }> }[]> = {};
+  permissions: { fileId: string; body: string }[] = [];
+  /** Deployments without setPublishSettings answer 404; the Drive permission is what has to carry it then. */
+  publishMissing = false;
+  taskLists: { id: string; title: string }[] = [{ id: "@default", title: "My Tasks" }];
+  tasks: { id: string; listId: string; title: string; due?: string; notes?: string; status: string }[] = [];
 
   fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
@@ -165,6 +172,75 @@ class FakeGoogle {
       return json({ results: hits.map((person) => ({ person })) });
     }
 
+    if (url.host === "forms.googleapis.com") {
+      if (method === "POST" && path === "/v1/forms") {
+        const info = (JSON.parse(body) as { info: { title: string } }).info;
+        const id = `form-${Object.keys(this.forms).length + 1}`;
+        this.forms[id] = { title: info.title, items: [], published: false };
+        return json({ formId: id, responderUri: `https://docs.google.com/forms/d/e/${id}/viewform` });
+      }
+      const [, rawId, verb] = /^\/v1\/forms\/([^/:]+)(?::(\w+)|\/responses)?$/.exec(path) ?? [];
+      const form = rawId ? this.forms[decodeURIComponent(rawId)] : undefined;
+      if (!form) return json({ error: { message: "Requested entity was not found." } }, 404);
+      if (verb === "batchUpdate") {
+        for (const req of (JSON.parse(body) as { requests: Record<string, never>[] }).requests) {
+          const info = req.updateFormInfo as { info?: { description?: string } } | undefined;
+          if (info?.info?.description) form.description = info.info.description;
+          const item = (req.createItem as { item?: { title?: string; questionItem?: { question?: Record<string, unknown> } } } | undefined)?.item;
+          if (item) {
+            form.items.push({
+              title: item.title ?? "",
+              questionId: `q${form.items.length + 1}`,
+              choice: Boolean(item.questionItem?.question?.choiceQuestion),
+            });
+          }
+        }
+        return json({});
+      }
+      if (verb === "setPublishSettings") {
+        if (this.publishMissing) return json({ error: { message: "Method not found." } }, 404);
+        form.published = true;
+        return json({});
+      }
+      if (path.endsWith("/responses")) return json({ responses: this.formResponses[decodeURIComponent(rawId!)] ?? [] });
+      return json({
+        formId: rawId,
+        info: { title: form.title, ...(form.description ? { description: form.description } : {}) },
+        items: form.items.map((i) => ({ title: i.title, questionItem: { question: { questionId: i.questionId, ...(i.choice ? { choiceQuestion: { type: "RADIO" } } : { textQuestion: {} }) } } })),
+      });
+    }
+
+    if (url.host === "tasks.googleapis.com") {
+      if (path === "/tasks/v1/users/@me/lists") return json({ items: this.taskLists });
+      const [, rawList, rawTask] = /^\/tasks\/v1\/lists\/([^/]+)\/tasks\/?([^/]*)$/.exec(path) ?? [];
+      const listId = decodeURIComponent(rawList ?? "");
+      if (!this.taskLists.some((l) => l.id === listId)) return json({ error: { message: "Not Found" } }, 404);
+      if (method === "GET") {
+        const dueMax = url.searchParams.get("dueMax");
+        const items = this.tasks.filter(
+          (t) =>
+            t.listId === listId &&
+            (url.searchParams.get("showCompleted") === "true" || t.status !== "completed") &&
+            (!dueMax || (t.due !== undefined && t.due <= dueMax)),
+        );
+        return json({ items: items.map(({ listId: _l, ...t }) => t) });
+      }
+      if (method === "POST") {
+        const input = JSON.parse(body) as { title: string; due?: string; notes?: string };
+        const task = { id: `task-${this.tasks.length + 1}`, listId, status: "needsAction", ...input };
+        this.tasks.push(task);
+        const { listId: _l, ...rest } = task;
+        return json(rest);
+      }
+      if (method === "PATCH") {
+        const task = this.tasks.find((t) => t.id === decodeURIComponent(rawTask ?? ""));
+        if (!task) return json({ error: { message: "Not Found" } }, 404);
+        Object.assign(task, JSON.parse(body));
+        const { listId: _l, ...rest } = task;
+        return json(rest);
+      }
+    }
+
     if (url.host === "sheets.googleapis.com") {
       const [, id, rest] = /^\/v4\/spreadsheets\/([^/]+)\/values\/(.+)$/.exec(path) ?? [];
       const append = rest?.endsWith(":append") ?? false;
@@ -209,6 +285,13 @@ class FakeGoogle {
         this.folders.push(folder);
         return json({ id: folder.id });
       }
+      const permission = /^\/drive\/v3\/files\/([^/]+)\/permissions$/.exec(path);
+      if (permission && method === "POST") {
+        const fileId = decodeURIComponent(permission[1]!);
+        if (!this.forms[fileId] && !this.files[fileId]) return json({ error: { message: "File not found" } }, 404);
+        this.permissions.push({ fileId, body });
+        return json({ id: `perm-${this.permissions.length}` });
+      }
       const [, fileId, action] = /^\/drive\/v3\/files\/([^/]+)(\/export)?$/.exec(path) ?? [];
       const file = fileId ? this.files[decodeURIComponent(fileId)] : undefined;
       if (!file) return json({ error: { message: "File not found" } }, 404);
@@ -231,7 +314,7 @@ class FakeGoogle {
 describe("Google pieces that need no database", () => {
   test("scopes follow configuration, and grants map back to services", () => {
     assert.ok(googleEnabled());
-    assert.deepEqual(enabledServices(), ["calendar", "gmail", "drive", "contacts"]);
+    assert.deepEqual(enabledServices(), ["calendar", "gmail", "drive", "contacts", "tasks", "forms"]);
     assert.deepEqual(scopesFor("gmail"), [SCOPE.gmailSend, SCOPE.gmailRead]);
     try {
       Object.assign(config, { GOOGLE_GMAIL_READ: false, GOOGLE_DRIVE_FULL: false, GOOGLE_SERVICES: "calendar,drive" });
@@ -252,11 +335,17 @@ describe("Google pieces that need no database", () => {
         "sheet_append",
         "sheet_read",
       ]);
+      Object.assign(config, { GOOGLE_SERVICES: "forms" });
+      assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), ["form_create", "form_responses", "google_connect", "google_disconnect"]);
+      assert.deepEqual(scopesFor("forms"), [SCOPE.formsBody, SCOPE.formsResponses, SCOPE.driveFile]);
+      Object.assign(config, { GOOGLE_SERVICES: "tasks" });
+      assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), ["google_connect", "google_disconnect", "task_add", "task_done", "task_list"]);
+      assert.deepEqual(scopesFor("tasks"), [SCOPE.tasks]);
     } finally {
-      Object.assign(config, { GOOGLE_GMAIL_READ: true, GOOGLE_DRIVE_FULL: true, GOOGLE_SERVICES: "calendar,gmail,drive,contacts" });
+      Object.assign(config, { GOOGLE_GMAIL_READ: true, GOOGLE_DRIVE_FULL: true, GOOGLE_SERVICES: "calendar,gmail,drive,contacts,tasks,forms" });
     }
     assert.deepEqual(servicesGranted([SCOPE.calendar, SCOPE.gmailSend]), ["calendar"], "gmail needs both scopes while read is on");
-    assert.equal(googleToolDefs().length, 15);
+    assert.equal(googleToolDefs().length, 20);
     try {
       config.GOOGLE_CLIENT_ID = "";
       assert.equal(googleToolDefs().length, 0);
@@ -395,7 +484,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
   };
 
   const connect = async (userId: string, scopes = ALL_SCOPES, email = "josh@gmail.com") => {
-    const url = new URL(await beginAuth(userId, ["calendar", "gmail", "drive", "contacts"]));
+    const url = new URL(await beginAuth(userId, ["calendar", "gmail", "drive", "contacts", "tasks", "forms"]));
     fake.grant = { scopes, email, challenge: url.searchParams.get("code_challenge")! };
     return completeAuth(url.searchParams.get("state")!, "good-code");
   };
@@ -430,7 +519,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     await say(u, "boleh");
     const [linkMsg, done] = out(u).slice(-2);
-    assert.match(linkMsg!.text!, /^🔗 \*Hubungkan Google Kalender, Gmail, Google Drive, Google Kontak\*\nhttps:\/\/milo\.example\.com\/connect\//);
+    assert.match(linkMsg!.text!, /^🔗 \*Hubungkan Google Kalender, Gmail, Google Drive, Google Kontak, Google Tasks, Google Formulir\*\nhttps:\/\/milo\.example\.com\/connect\//);
     assert.match(done!.text!, /Sekarang, mau mulai dari apa\?/);
     assert.equal((await byWa(u)).state, "READY");
 
@@ -438,14 +527,14 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     const page = await ctx.app.inject({ url: `${link.pathname}${link.search}` });
     assert.equal(page.statusCode, 200);
     assert.match(page.body, /Hubungkan Google ke Milo/);
-    assert.equal((page.body.match(/type="checkbox" name="s" value="\w+" checked/g) ?? []).length, 4);
+    assert.equal((page.body.match(/type="checkbox" name="s" value="\w+" checked/g) ?? []).length, 6);
     assert.match(String(page.headers["content-security-policy"]), /form-action 'self' https:\/\/accounts\.google\.com/);
 
     const none = await ctx.app.inject({ url: `${link.pathname}/start` });
     assert.match(none.body, /Pilih minimal satu/);
     assert.equal((await ctx.app.inject({ url: `${link.pathname.replace(/.$/, "x")}/start?s=calendar` })).statusCode, 404);
 
-    const start = await ctx.app.inject({ url: `${link.pathname}/start?s=calendar&s=gmail&s=drive&s=contacts` });
+    const start = await ctx.app.inject({ url: `${link.pathname}/start?s=calendar&s=gmail&s=drive&s=contacts&s=tasks&s=forms` });
     assert.equal(start.statusCode, 302);
     const auth = new URL(String(start.headers.location));
     assert.equal(auth.origin + auth.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
@@ -462,7 +551,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.equal(callback.statusCode, 200);
     assert.match(callback.body, /Google terhubung sebagai josh@gmail\.com/);
     const confirmed = last(u).text!;
-    assert.match(confirmed, /^Google Anda sudah tersambung \(josh@gmail\.com\), untuk Google Kalender, Gmail, Google Drive, Google Kontak\./);
+    assert.match(confirmed, /^Google Anda sudah tersambung \(josh@gmail\.com\), untuk Google Kalender, Gmail, Google Drive, Google Kontak, Google Tasks, Google Formulir\./);
     assert.match(confirmed, /agenda saya minggu ini apa\?/);
     const [account] = await sql<{ email: string; refreshTokenEnc: string; scopes: string[] }[]>`
       select email, refresh_token_enc, scopes from google_accounts ga join users u on u.id = ga.user_id where u.wa_id = ${u}
@@ -479,7 +568,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     await say(u, "koneksi");
     const connections = last(u);
-    assert.match(connections.text!, /Google: ✅ josh@gmail\.com, untuk Google Kalender, Gmail, Google Drive, Google Kontak\./);
+    assert.match(connections.text!, /Google: ✅ josh@gmail\.com, untuk Google Kalender, Gmail, Google Drive, Google Kontak, Google Tasks, Google Formulir\./);
     assert.deepEqual(connections.buttons!.map((b) => b.id), ["conn:google:disconnect"]);
   });
 
@@ -488,11 +577,18 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     const result = await connect(u.id, ["openid", "email", SCOPE.calendar], "rina@gmail.com");
     assert.deepEqual(result.granted, ["calendar"]);
     await ctx.pipeline.googleConnected(result);
-    assert.match(last(u.waId).text!, /Google Kalender\.\n⚠️ Gmail, Google Drive, Google Kontak belum diizinkan/);
+    assert.match(last(u.waId).text!, /Google Kalender\.\n⚠️ Gmail, Google Drive, Google Kontak, Google Tasks, Google Formulir belum diizinkan/);
     const denied = await runTool({ user: u }, "gmail_search", { query: "invoice" });
     assert.match(String(denied.content), /belum terhubung\. Panggil google_connect/);
     await say(u.waId, "koneksi");
-    assert.deepEqual(last(u.waId).buttons!.map((b) => b.id), ["conn:google:gmail", "conn:google:drive", "conn:google:contacts", "conn:google:disconnect"]);
+    assert.deepEqual(last(u.waId).buttons!.map((b) => b.id), [
+      "conn:google:gmail",
+      "conn:google:drive",
+      "conn:google:contacts",
+      "conn:google:tasks",
+      "conn:google:forms",
+      "conn:google:disconnect",
+    ]);
   });
 
   test("calendar: agenda, free time, and invitations or deletions only after a tap", async () => {
@@ -768,6 +864,131 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.deepEqual(list.map((s) => s.sheet), ["Pengeluaran"]);
     assert.match(String((await runTool({ user: u }, "sheet_read", { sheet: "Omzet" })).content), /Belum ada catatan bernama "Omzet"/);
     assert.equal((await runTool({ user: u }, "sheet_append", { sheet: "Omzet", fields: {} })).isError, true);
+  });
+
+  test("tasks: a to-do lands on the list, shows up in the agenda, and gets ticked off", async () => {
+    const u = await readyUser("6284400000011");
+    await connect(u.id);
+    fake.taskLists = [
+      { id: "@default", title: "My Tasks" },
+      { id: "list-proyek", title: "Proyek" },
+    ];
+    fake.tasks = [];
+    const d = today();
+
+    const added = JSON.parse(String((await runTool({ user: u }, "task_add", { title: "Siapkan draft kontrak", due: d })).content)) as {
+      added: string;
+      list: string;
+      due: string;
+      note: string;
+    };
+    assert.equal(added.list, "My Tasks", "without a list it goes where they will actually see it");
+    assert.equal(added.due, d);
+    assert.match(added.note, /tanggal saja, tanpa jam/, "the model is told, so it does not promise an hour");
+    // A task due "today" must not slide to yesterday for a user east of UTC.
+    assert.equal(fake.tasks[0]!.due, `${d}T00:00:00.000Z`);
+
+    await runTool({ user: u }, "task_add", { title: "Telepon supplier besok", due: plusDays(d, 1), list: "proyek" });
+    assert.equal(fake.tasks[1]!.listId, "list-proyek", "a list they name by half its name is still that list");
+    await runTool({ user: u }, "task_add", { title: "Tanpa tenggat" });
+
+    const open = JSON.parse(String((await runTool({ user: u }, "task_list", {})).content)) as { title: string; due?: string }[];
+    assert.deepEqual(open.map((t) => t.title), ["Siapkan draft kontrak", "Telepon supplier besok", "Tanpa tenggat"], "soonest first, undated last");
+
+    const dueToday = JSON.parse(String((await runTool({ user: u }, "task_list", { due_before: d })).content)) as { title: string }[];
+    assert.deepEqual(dueToday.map((t) => t.title), ["Siapkan draft kontrak"]);
+    assert.equal((await runTool({ user: u }, "task_add", { title: "x", due: "besok" })).isError, true, "a vague date is refused, not guessed");
+
+    await say(u.waId, "agenda");
+    const agenda = last(u.waId).text!;
+    assert.match(agenda, /• ✅ Siapkan draft kontrak/, "today's task sits in the agenda beside reminders");
+    assert.doesNotMatch(agenda, /Telepon supplier besok/, "tomorrow's task is not today's problem");
+
+    const done = JSON.parse(String((await runTool({ user: u }, "task_done", { title: "draft kontrak" })).content)) as { completed: string };
+    assert.equal(done.completed, "Siapkan draft kontrak", "half the title is enough to tick the right one");
+    assert.equal(fake.tasks[0]!.status, "completed");
+    assert.match(String((await runTool({ user: u }, "task_done", { title: "cuci mobil" })).content), /Tidak ada tugas yang cocok/);
+    await say(u.waId, "agenda");
+    assert.doesNotMatch(last(u.waId).text!, /Siapkan draft kontrak/, "and it leaves the agenda once done");
+  });
+
+  test("forms: a form is made, opened to anyone, and its answers come back counted", async () => {
+    const u = await readyUser("6284400000012");
+    await connect(u.id);
+    fake.forms = {};
+    fake.formResponses = {};
+    fake.permissions = [];
+
+    const made = JSON.parse(
+      String(
+        (
+          await runTool({ user: u }, "form_create", {
+            title: "Pesanan Kue Lebaran",
+            description: "Pesanan ditutup 20 Maret.",
+            questions: [
+              { title: "Nama", type: "text", required: true },
+              { title: "Rasa", type: "choice", options: ["Nastar", "Kastengel"], required: true },
+              { title: "Diambil tanggal", type: "date" },
+            ],
+          })
+        ).content,
+      ),
+    ) as { created: string; share_link: string; edit_link: string; questions: number; public: boolean };
+    assert.equal(made.created, "Pesanan Kue Lebaran");
+    assert.equal(made.questions, 3);
+    assert.equal(made.public, true);
+    assert.match(made.share_link, /^https:\/\/docs\.google\.com\/forms\/d\/e\/form-1\/viewform$/);
+    assert.match(made.edit_link, /\/forms\/d\/form-1\/edit$/);
+
+    const form = fake.forms["form-1"]!;
+    assert.deepEqual(form.items.map((i) => i.title), ["Nama", "Rasa", "Diambil tanggal"], "questions keep the order they were asked in");
+    assert.equal(form.description, "Pesanan ditutup 20 Maret.");
+    assert.equal(form.published, true, "a form nobody can open is worse than no form");
+    assert.deepEqual(JSON.parse(fake.permissions[0]!.body), { role: "reader", type: "anyone", view: "published" });
+
+    const [row] = await sql<{ title: string; formId: string }[]>`select title, form_id from google_forms where user_id = ${u.id}`;
+    assert.deepEqual({ ...row }, { title: "Pesanan Kue Lebaran", formId: "form-1" }, "remembered here, because the Forms API cannot list forms");
+
+    const empty = JSON.parse(String((await runTool({ user: u }, "form_responses", { form: "kue lebaran" })).content)) as { total: number; note: string };
+    assert.deepEqual([empty.total, empty.note], [0, "Belum ada yang mengisi."]);
+
+    const answer = (nama: string, rasa: string) => ({
+      createTime: new Date().toISOString(),
+      answers: {
+        q1: { textAnswers: { answers: [{ value: nama }] } },
+        q2: { textAnswers: { answers: [{ value: rasa }] } },
+      },
+    });
+    fake.formResponses["form-1"] = [answer("Andi", "Nastar"), answer("Rina", "Kastengel"), answer("Sari", "Nastar")];
+
+    const summary = JSON.parse(String((await runTool({ user: u }, "form_responses", { form: "kue" })).content)) as {
+      total: number;
+      last_answer_at: string;
+      questions: { question: string; counts?: Record<string, number>; latest?: string[]; answered: number }[];
+    };
+    assert.equal(summary.total, 3);
+    assert.match(summary.last_answer_at, /September 2026/);
+    assert.deepEqual(summary.questions[1], { question: "Rasa", counts: { Nastar: 2, Kastengel: 1 }, answered: 3 }, "a choice is counted, not listed");
+    assert.deepEqual(summary.questions[0], { question: "Nama", latest: ["Sari", "Rina", "Andi"], answered: 3 }, "written answers come newest first");
+    assert.deepEqual(summary.questions[2], { question: "Diambil tanggal", latest: [], answered: 0 }, "a question nobody answered says so");
+
+    const list = JSON.parse(String((await runTool({ user: u }, "form_responses", {})).content)) as { form: string }[];
+    assert.deepEqual(list.map((f) => f.form), ["Pesanan Kue Lebaran"]);
+    assert.match(String((await runTool({ user: u }, "form_responses", { form: "arisan" })).content), /Belum ada formulir bernama "arisan"/);
+
+    const bad = await runTool({ user: u }, "form_create", { title: "Survei", questions: [{ title: "Puas?", type: "choice", options: ["Ya"] }] });
+    assert.equal(bad.isError, true);
+    assert.match(String(bad.content), /perlu minimal dua pilihan/);
+
+    // Where setPublishSettings is not available, the Drive permission alone still has to open the form.
+    fake.publishMissing = true;
+    try {
+      const older = JSON.parse(String((await runTool({ user: u }, "form_create", { title: "Absensi", questions: [{ title: "Nama", type: "text" }] })).content)) as { public: boolean };
+      assert.equal(older.public, true);
+      assert.equal(fake.permissions.length, 2);
+    } finally {
+      fake.publishMissing = false;
+    }
   });
 
   test("contacts: a name the user never saved is found in their Google contacts and kept", async () => {

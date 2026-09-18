@@ -313,7 +313,15 @@ export function helpText(opts: { attachments: boolean; servers: boolean; google?
       : []),
     "",
     ...(opts.google
-      ? ["", "*Google*", "• _agenda minggu ini_ · _cari waktu kosong 1 jam besok_", "• _email penting hari ini apa?_ · _balas email Andi, bilang oke_", "• _cari proposal di Drive_ · _simpan file tadi ke Drive_"]
+      ? [
+          "",
+          "*Google*",
+          "• _agenda minggu ini_ · _cari waktu kosong 1 jam besok_",
+          "• _email penting hari ini apa?_ · _balas email Andi, bilang oke_",
+          "• _cari proposal di Drive_ · _simpan file tadi ke Drive_",
+          "• _catat tugas: siapkan draft kontrak_ · _tugas saya apa saja?_",
+          "• _buatkan form pesanan: nama, nomor HP, jumlah_ · _sudah berapa yang isi?_",
+        ]
       : []),
     "",
     "Kata kunci: *MENU* pilihan cepat · *GAYA* ganti kepribadian · *FILE* kirim file · *KONEKSI* hubungkan akun · *LOKASI* kirim lokasi · *HAPUS* hapus data · *STOP* berhenti",

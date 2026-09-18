@@ -64,7 +64,7 @@ const schema = z
     GOOGLE_CLIENT_SECRET: z.string().default(""),
     /** Override when Google must call back somewhere other than PUBLIC_BASE_URL/google/callback. */
     GOOGLE_REDIRECT_URL: z.string().default(""),
-    GOOGLE_SERVICES: z.string().default("calendar,gmail,drive,contacts"),
+    GOOGLE_SERVICES: z.string().default("calendar,gmail,drive,contacts,tasks,forms"),
     /** Restricted scopes: fine in Testing mode, need a CASA assessment for a public app. */
     GOOGLE_GMAIL_READ: z.stringbool().default(true),
     GOOGLE_DRIVE_FULL: z.stringbool().default(true),

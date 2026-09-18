@@ -291,6 +291,17 @@ create table if not exists relay_inbox (
 );
 create index if not exists relay_inbox_unseen_idx on relay_inbox (user_id) where seen_at is null;
 
+create table if not exists google_forms (
+  id             bigserial primary key,
+  user_id        bigint not null references users(id) on delete cascade,
+  form_id        text not null,
+  title          text not null,
+  responder_uri  text not null,
+  created_at     timestamptz not null default now(),
+  unique (user_id, form_id)
+);
+create index if not exists google_forms_user_idx on google_forms (user_id, id desc);
+
 create table if not exists routine_log (
   user_id  bigint not null references users(id) on delete cascade,
   kind     text not null,

@@ -1,4 +1,4 @@
-# Menghubungkan Google (Kalender, Gmail, Drive, Kontak)
+# Menghubungkan Google (Kalender, Gmail, Drive, Kontak, Tasks, Formulir)
 
 Pengguna menghubungkan akun Google-nya sendiri lewat WhatsApp. Ada tiga jalan: langkah terakhir perkenalan,
 **MENU → Koneksi akun**, atau kata kunci **KONEKSI**. Milo mengirim link pribadi yang berlaku 30 menit. Di halaman
@@ -15,6 +15,20 @@ melihat password pengguna.
 | Sheets | catat omzet/pengeluaran ke spreadsheet buatan Milo | `drive.file` (tanpa izin baru) | non-sensitif |
 | Drive | cari & baca semua file | `drive.readonly` | **restricted** |
 | Kontak | cari nomor & email orang dari kontak Google pengguna | `contacts.readonly` | sensitif |
+| Tasks | lihat, tambah, dan centang tugas di Google Tasks | `tasks` | sensitif |
+| Formulir | buat form pesanan/absensi/survei dan baca jawabannya | `forms.body` + `forms.responses.readonly` + `drive.file` | sensitif |
+
+## Dua hal yang perlu diketahui
+
+**Google Tasks hanya menyimpan tanggal, bukan jam.** API-nya membuang bagian jam dari tenggat. Karena itu pengingat
+tetap milik Milo sendiri (lengkap dengan jamnya), sedangkan Tasks dipakai untuk pekerjaan yang cukup "hari ini".
+Tugas yang jatuh tempo hari ini ikut muncul di **AGENDA** dan di sapaan pagi.
+
+**Formulir baru harus dibuka dulu supaya bisa diisi orang lain.** Form yang dibuat lewat API awalnya hanya bisa
+dibuka pembuatnya. Milo otomatis menerbitkannya (`setPublishSettings`) lalu memberi izin Drive
+`role: reader, type: anyone, view: published`. Kalau langkah izin itu ditolak Google, Milo memberi tahu bahwa
+linknya mungkin belum bisa dibuka orang lain, bukan diam-diam mengirim link yang rusak. Milo hanya bisa membaca
+formulir yang ia buat sendiri.
 
 **Tidak ada yang terkirim atau terhapus tanpa persetujuan pengguna.** Mengirim email, mengirim undangan kalender,
 dan menghapus acara selalu menunggu pengguna menekan tombol konfirmasi di WhatsApp. Tombol itu ditangani Milo
@@ -36,7 +50,7 @@ Untuk proyek ini: alamat Milo `https://app.secretary.my.id`, authorized domain `
 Buka [console.cloud.google.com](https://console.cloud.google.com) dengan akun Google milik bisnis Anda.
 
 1. **Buat project**, misalnya `Milo`.
-2. **APIs & Services → Library.** Aktifkan **Google Calendar API**, **Gmail API**, **Google Drive API**, dan **People API** (untuk kontak).
+2. **APIs & Services → Library.** Aktifkan **Google Calendar API**, **Gmail API**, **Google Drive API**, **People API** (untuk kontak), **Google Tasks API**, dan **Google Forms API**.
 3. **Google Auth Platform → Branding** (dulu "OAuth consent screen"):
    - **App name:** `Milo`.
    - **User support email** dan **Developer contact:** email Anda.
@@ -47,7 +61,8 @@ Buka [console.cloud.google.com](https://console.cloud.google.com) dengan akun Go
    - **Test users → Add users:** tambahkan setiap Gmail yang akan menghubungkan Milo. Maksimal 100 alamat, dan
      tiap alamat harus ditambahkan manual.
 5. **Data Access → Add or remove scopes:** tambahkan `…/auth/calendar.events`, `…/auth/gmail.send`,
-   `…/auth/gmail.readonly`, `…/auth/drive.file`, `…/auth/drive.readonly`, dan `…/auth/contacts.readonly`.
+   `…/auth/gmail.readonly`, `…/auth/drive.file`, `…/auth/drive.readonly`, `…/auth/contacts.readonly`,
+   `…/auth/tasks`, `…/auth/forms.body`, dan `…/auth/forms.responses.readonly`.
 6. **Clients → Create client:**
    - **Application type:** Web application. **Name:** `Milo server`.
    - **Authorized redirect URIs:** `https://app.secretary.my.id/google/callback`. Harus sama persis, tanpa garis

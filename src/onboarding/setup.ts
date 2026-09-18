@@ -108,6 +108,8 @@ export const CONNECT_ROWS: Record<GoogleService, Button> = {
   gmail: { id: "conn:google:gmail", title: "📧 Gmail", description: "Cari, baca, dan balas email" },
   drive: { id: "conn:google:drive", title: "📁 Google Drive", description: "Cari dan simpan dokumen" },
   contacts: { id: "conn:google:contacts", title: "👤 Google Kontak", description: "Cari nomor orang tanpa mengetik nomornya" },
+  tasks: { id: "conn:google:tasks", title: "✅ Google Tasks", description: "Daftar tugas yang ikut muncul di laptop" },
+  forms: { id: "conn:google:forms", title: "📝 Google Formulir", description: "Buat form pesanan atau survei, lalu baca jawabannya" },
 };
 
 export function parseConnectChoice(text: string): ConnectChoice | undefined {
@@ -117,6 +119,8 @@ export function parseConnectChoice(text: string): ConnectChoice | undefined {
   if (/gmail|e-?mail|surel/.test(t)) return "gmail";
   if (/drive|dokumen/.test(t)) return "drive";
   if (/kontak|contact/.test(t)) return "contacts";
+  if (/task|tugas|to.?do/.test(t)) return "tasks";
+  if (/form|formulir|survei|survey/.test(t)) return "forms";
   if (/server/.test(t)) return "server";
   return undefined;
 }

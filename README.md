@@ -122,6 +122,10 @@ gagal atau kosong.
 
 ### Google: Kalender, Gmail, Drive
 
+Selain Kalender, Gmail, Drive, dan Kontak, ada **Google Tasks** (tugas dari chat muncul di panel Tasks di laptop,
+dan yang jatuh tempo hari ini ikut di agenda) dan **Google Formulir** (buat form pesanan atau survei lewat chat,
+lalu Milo membacakan ringkasan jawabannya).
+
 Pengguna menghubungkan akun Google-nya dari langkah terakhir perkenalan, dari **MENU → Koneksi akun**, atau lewat
 kata kunci **KONEKSI**. Setelah terhubung, Milo bisa:
 
