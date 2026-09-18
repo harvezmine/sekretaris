@@ -63,6 +63,8 @@ const schema = z
     GOOGLE_DRIVE_FULL: z.stringbool().default(true),
 
     SERVER_ACCESS: z.enum(["off", "admin", "all"]).default("admin"),
+    /** Running commands on a user's own server. Needs SERVER_ACCESS too: you cannot act on a server you cannot see. */
+    SERVER_ACTION_ACCESS: z.enum(["off", "admin", "all"]).default("all"),
     SERVER_ADMIN_NUMBERS: z.string().default(""),
     SERVER_KEY_SECRET: z.string().default(""),
     USER_SERVER_LIMIT: z.coerce.number().int().min(0).max(20).default(3),

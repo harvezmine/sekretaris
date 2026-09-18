@@ -25,8 +25,8 @@ services:
       DATABASE_URL: postgres://milo:${POSTGRES_PASSWORD}@db:5432/milo
       DATA_DIR: /app/data
       PORT: "3000"
-      # Kosongkan (DOCKER_PROXY_URL= di .env) untuk mematikan cek host Milo lewat Docker.
-      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://dockerproxy:2375}
+      # Kosong = Milo tidak bisa melihat mesinnya sendiri sama sekali. Hanya isi kalau operator memang mau itu.
+      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-}
       # Kosongkan (SEARXNG_URL= di .env) untuk mematikan pencarian internet.
       SEARXNG_URL: ${SEARXNG_URL-http://searxng:8080}
       SERVERS_FILE: /app/servers/servers.json
@@ -38,8 +38,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      dockerproxy:
-        condition: service_started
       searxng:
         condition: service_started
     healthcheck:
@@ -68,7 +66,10 @@ services:
 
   # Hanya-baca: Milo bisa melihat container, log dan pemakaian di mesin ini, tapi tidak bisa menjalankan,
   # menghentikan atau mengubah apa pun (semua request selain GET ditolak). Tidak membuka port ke luar.
+  # Mati kecuali dinyalakan sendiri: memberi Milo akses ke mesinnya sendiri. Nyalakan hanya kalau operator
+  # memang mau Milo bisa melihat host-nya (COMPOSE_PROFILES=hostcheck dan DOCKER_PROXY_URL=http://dockerproxy:2375).
   dockerproxy:
+    profiles: ["hostcheck"]
     image: tecnativa/docker-socket-proxy:v0.5.0
     restart: unless-stopped
     environment:

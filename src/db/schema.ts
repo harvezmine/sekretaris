@@ -149,6 +149,7 @@ alter table reminders add column if not exists repeat_until timestamptz;
 alter table reminders add column if not exists series_id bigint;
 create index if not exists reminders_series_idx on reminders (series_id) where status = 'scheduled';
 
+
 create table if not exists relay_messages (
   id            bigserial primary key,
   owner_id      bigint not null references users(id) on delete cascade,
@@ -261,4 +262,20 @@ create table if not exists usage_ledger (
   created_at      timestamptz not null default now()
 );
 create index if not exists usage_ledger_created_idx on usage_ledger (created_at);
+
+alter table user_servers add column if not exists actions jsonb not null default '[]'::jsonb;
+
+create table if not exists server_runs (
+  id           bigserial primary key,
+  user_id      bigint not null references users(id) on delete cascade,
+  server_name  text not null,
+  action_name  text,
+  command      text not null,
+  exit_code    int,
+  duration_ms  int,
+  output       text,
+  error        text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists server_runs_user_idx on server_runs (user_id, id desc);
 `;
