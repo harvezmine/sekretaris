@@ -1,0 +1,43 @@
+# The nginx image fills ${...} from the container's environment at startup (only variables that exist, so nginx's
+# own $uri and friends are left alone). The WhatsApp number lives in .env, not in the HTML: change it there and
+# restart the container, no rebuild.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    server_tokens off;
+    error_page 404 /404.html;
+
+    # Declared once here; the locations below use `expires` rather than add_header, so they keep these.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Content-Security-Policy "default-src 'none'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+
+    sub_filter_types text/html;
+    sub_filter_once off;
+    sub_filter "__WA_NUMBER__" "${LANDING_WA_NUMBER}";
+
+    gzip on;
+    gzip_types text/css image/svg+xml;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    location = /404.html {
+        internal;
+    }
+
+    location ~* \.(css|png)$ {
+        expires 1h;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+        expires 5m;
+    }
+}

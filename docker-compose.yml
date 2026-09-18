@@ -47,6 +47,27 @@ services:
       retries: 3
       start_period: 20s
 
+  # Landing page secretary.my.id. File statis, tanpa akses ke database atau app. Di Cloudflare Tunnel,
+  # arahkan hostname secretary.my.id ke http://landing:80. Port lokal hanya untuk pratinjau di mesin ini.
+  landing:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      # Nomor publik Sekretaris AI (tampil di halaman). .env boleh menimpanya; kosong di .env = pakai nomor ini.
+      LANDING_WA_NUMBER: ${LANDING_WA_NUMBER:-6282214533604}
+    volumes:
+      - ./landing/site:/usr/share/nginx/html:ro
+      - ./landing/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "127.0.0.1:${LANDING_PORT:-8080}:80"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Mesin pencari sendiri untuk tool web_search. Tidak membuka port ke luar: hanya app yang memanggilnya.
   searxng:
     image: searxng/searxng:latest

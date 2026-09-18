@@ -14,6 +14,8 @@ Yang ada di POC ini:
 - **Server**: cek kondisi server pengguna, dan jalankan aksi yang mereka simpan sendiri (deploy, restart). Teks
   perintahnya selalu ditulis pengguna — AI hanya memanggilnya berdasarkan nama — dan setiap eksekusi menunggu
   tombol konfirmasi. Semua tercatat di `server_runs`.
+- **Landing page** `secretary.my.id` di folder `landing/`: HTML statis lewat nginx, nomor WhatsApp dari
+  `LANDING_WA_NUMBER`. Container terpisah, tidak menyentuh database atau app.
 - **Tempat & navigasi**: cari restoran/SPBU/ATM terdekat, dan kirim link navigasi Maps. Sumbernya OpenStreetMap
   (gratis, tanpa API key) atau Google Places kalau key-nya diisi. Link navigasinya selalu gratis. Lihat
   [docs/setup-maps.md](docs/setup-maps.md).

@@ -140,6 +140,14 @@ log "Recreate container yang image/konfignya berubah..."
 docker compose up -d --remove-orphans 2>&1 | tee -a "$LOG_FILE" \
   || fail "docker compose up gagal — cek: docker compose logs app --tail 50"
 
+# Landing page: its HTML and CSS are read straight from the repo, so the pull above already put them live.
+# Only its nginx template is read at start-up, so the container restarts when that file changed.
+if [[ "$FORCE" == "true" ]] || grep -qx 'landing/default.conf.template' <<<"${CHANGED_FILES:-}"; then
+  log "Restart landing (template nginx berubah atau --force)..."
+  docker compose restart landing 2>&1 | tee -a "$LOG_FILE" \
+    || log "PERINGATAN: restart landing gagal. Cek: docker compose logs landing --tail 30"
+fi
+
 QT_AFTER="$(docker compose ps -q quicktunnel 2>/dev/null || true)"
 if [[ -n "$QT_AFTER" && "$QT_BEFORE" != "$QT_AFTER" ]]; then
   log "PERINGATAN: container quicktunnel dibuat ulang — alamat publik berubah."
@@ -177,6 +185,19 @@ fi
 log "/healthz OK: $(cat "$HEALTH_TMP")"
 if grep -q '"dryRun":true' "$HEALTH_TMP"; then
   log "PERINGATAN: WA_DRY_RUN aktif — Milo tidak benar-benar mengirim pesan."
+fi
+
+# The landing page is separate from the app: a problem there is reported, not treated as a failed deploy.
+LANDING_PORT_VALUE="$(env_value LANDING_PORT)"
+LANDING_URL="http://127.0.0.1:${LANDING_PORT_VALUE:-8080}"
+if curl -fsS "$LANDING_URL/healthz" >/dev/null 2>&1; then
+  LANDING_HTML="$(curl -fsS "$LANDING_URL/" || true)"
+  WA_LINKS="$(grep -o 'wa.me/62[0-9]*' <<<"$LANDING_HTML" | wc -l | tr -d ' ')"
+  WA_EMPTY="$(grep -o '__WA_NUMBER__' <<<"$LANDING_HTML" | wc -l | tr -d ' ')"
+  log "Landing OK ($LANDING_URL), tombol WhatsApp berisi nomor: $WA_LINKS"
+  [[ "$WA_EMPTY" == "0" ]] || log "PERINGATAN: $WA_EMPTY tombol WhatsApp belum berisi nomor. Cek LANDING_WA_NUMBER di .env"
+else
+  log "PERINGATAN: landing tidak menjawab di $LANDING_URL. Cek: docker compose logs landing --tail 30"
 fi
 docker compose ps 2>&1 | tee -a "$LOG_FILE"
 log "=== Deploy sukses: $LOCAL_REV -> $NEW_REV ==="

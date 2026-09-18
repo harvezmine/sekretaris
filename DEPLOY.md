@@ -15,12 +15,14 @@ atau dashboard Fonnte). Minta pengguna mengerjakannya, lalu tunggu konfirmasi.
 | Arsip backup dari Mac | `backups/milo-20260917-165948.tgz` (Milo di Mac sudah dimatikan sejak backup ini dibuat) |
 | Domain (Cloudflare) | `secretary.my.id` |
 | Alamat Milo | `app.secretary.my.id` → tunnel ke `http://app:3000` |
+| Landing page | `secretary.my.id` dan `www.secretary.my.id` → tunnel ke `http://landing:80` |
 | `PUBLIC_BASE_URL` | `https://app.secretary.my.id` |
 | Webhook Fonnte | `https://app.secretary.my.id/fonnte/webhook/<FONNTE_WEBHOOK_SECRET>` |
 | Redirect login Google | `https://app.secretary.my.id/google/callback` |
 
-`secretary.my.id` (tanpa subdomain) sengaja dibiarkan kosong untuk halaman depan dan kebijakan privasi nanti.
-Halaman itu dibutuhkan saat verifikasi Google.
+`secretary.my.id` (tanpa subdomain) dan `www` menampilkan landing page Sekretaris AI beserta
+`https://secretary.my.id/privasi.html`, halaman kebijakan privasi yang juga dibutuhkan saat verifikasi Google.
+Lihat langkah 6C.
 
 Kalau folder repo di server ternyata berbeda, pakai folder itu di semua perintah di bawah.
 
@@ -228,6 +230,51 @@ scripts/public-url.sh
 - **Login Google belum bisa dipakai:** Google hanya menerima alamat tetap.
 - **Kalau domain sudah aktif:** lanjutkan ke 6A.
 
+## 6C. Landing page `secretary.my.id`
+
+Landing page Sekretaris AI adalah container `landing` (nginx) yang menyajikan file statis dari `landing/site/`
+di repo. Container ini tidak menyentuh database atau app. Butuh langkah 6A (tunnel bernama).
+
+**Di server tidak ada yang perlu disiapkan.** `docker compose up -d` (juga lewat `./deploy.sh`) otomatis membuat
+container `landing`, dan nomor WhatsApp Sekretaris AI (`6282214533604`) sudah jadi nilai bawaan di
+`docker-compose.yml`. Isi `LANDING_WA_NUMBER` di `.env` hanya kalau nomornya mau diganti.
+
+**👤 Pengguna, sekali saja, di Cloudflare Zero Trust → Networks → Tunnels → tunnel ini → Public Hostname:**
+
+| Subdomain | Domain | Type | URL |
+| --- | --- | --- | --- |
+| *(kosong)* | `secretary.my.id` | `HTTP` | `landing:80` |
+| `www` | `secretary.my.id` | `HTTP` | `landing:80` |
+
+Selalu `HTTP` dan `landing:80`, bukan `localhost` dan bukan `https`: HTTPS dikerjakan Cloudflare, dan `landing`
+adalah nama container di jaringan Docker yang sama dengan `tunnel`.
+
+Kalau Cloudflare menolak dengan pesan bahwa record DNS untuk nama itu sudah ada, hapus dulu record `A`, `AAAA`,
+atau `CNAME` untuk `@` dan `www` di **DNS → Records** (biasanya sisa parkir domain dari registrar), lalu ulangi.
+Cloudflare membuat record yang benar sendiri.
+
+Cek dari server:
+
+```bash
+cd /home/sekretaris
+docker compose up -d landing
+docker compose ps landing                                   # harus healthy
+curl -fsS http://127.0.0.1:8080/healthz                     # "ok"
+curl -fsS https://secretary.my.id/healthz                   # "ok" lewat tunnel
+curl -fsS https://secretary.my.id/ | grep -c '__WA_NUMBER__' # harus 0: semua tombol sudah berisi nomor WhatsApp
+curl -fsS -o /dev/null -w '%{http_code}\n' https://secretary.my.id/privasi.html   # 200
+curl -fsS -o /dev/null -w '%{http_code}\n' https://www.secretary.my.id/          # 200
+```
+
+**Setelah itu, setiap update landing page cukup lewat push.** Ubah file di `landing/site/` di Mac, commit, push,
+lalu jalankan `./deploy.sh` di server. File HTML dan CSS dibaca langsung dari repo, jadi langsung tayang setelah
+`git pull` di dalam `deploy.sh`. Kalau `landing/default.conf.template` ikut berubah, `deploy.sh` me-restart
+container `landing` sendiri. Di akhir, `deploy.sh` melaporkan apakah landing menjawab dan memperingatkan kalau
+masih ada tombol WhatsApp tanpa nomor.
+
+Gambar pratinjau yang muncul saat link dibagikan di WhatsApp ada di `landing/site/og.png`. Sumbernya
+`landing/og/og.html`; buat ulang di Mac dengan `landing/og/render.sh` setelah mengubah judul atau harga.
+
 ## 7. 👤 Pengguna: arahkan webhook Fonnte ke server ini
 
 ```bash
@@ -334,8 +381,8 @@ cd /home/sekretaris
 1. `git fetch`, lalu fast-forward.
 2. `scripts/backup.sh`.
 3. `docker compose build app`.
-4. `docker compose up -d`.
-5. Menunggu `/healthz` mengembalikan `"ok":true`.
+4. `docker compose up -d`, lalu restart `landing` kalau template nginx-nya berubah.
+5. Menunggu `/healthz` mengembalikan `"ok":true`, lalu memeriksa landing page.
 
 - **Tanpa commit baru**, skrip langsung keluar tanpa menyentuh container.
 - **Log** ada di `deploy.log`.
@@ -365,6 +412,9 @@ diulang.
 | Cek server pengguna: "tidak bisa dibuka; SERVER_KEY_SECRET mungkin berubah" | `SERVER_KEY_SECRET` di `.env` harus sama persis dengan milik Mac. Ambil lagi dari arsip backup (file `env` di dalamnya). |
 | Login Google: `redirect_uri_mismatch` | Redirect URI di Google Cloud harus persis `https://app.secretary.my.id/google/callback`, dan `PUBLIC_BASE_URL` harus `https://app.secretary.my.id`. |
 | "Carikan restoran terdekat" tidak jalan | Pengguna harus pernah membagikan lokasi untuk "terdekat". Tanpa `GOOGLE_MAPS_API_KEY`, sumbernya OpenStreetMap (gratis) dan tidak ada rating. Cek `PLACES_PROVIDER` dan lihat [docs/setup-maps.md](docs/setup-maps.md). |
+| `secretary.my.id` tidak terbuka atau 502 | Public hostname di tunnel harus `HTTP` → `landing:80` (bukan `localhost`). `docker compose ps landing` harus healthy. Lihat langkah 6C. |
+| Cloudflare menolak hostname `secretary.my.id` | Masih ada record DNS lama untuk `@` atau `www`. Hapus di DNS → Records, lalu tambahkan hostname lagi (langkah 6C). |
+| Tombol "Chat" di landing membuka WhatsApp tanpa tujuan | `LANDING_WA_NUMBER` di `.env` terisi nilai yang salah. Kosongkan untuk memakai nomor bawaan, lalu `docker compose up -d landing`. |
 | Perintah server tidak jalan | `SERVER_ACTION_ACCESS` di `.env` harus `all` (atau `admin` dengan nomor itu di `SERVER_ADMIN_NUMBERS`), dan servernya sudah terhubung. Riwayat eksekusi ada di tabel `server_runs`. |
 | Kontak Google tidak ketemu | People API belum diaktifkan di Google Cloud, atau scope `contacts.readonly` belum dicentang saat login. Ketik *KONEKSI* untuk login ulang. |
 | Login Google: "Akses diblokir" | Gmail pengguna belum ditambahkan sebagai test user. |
