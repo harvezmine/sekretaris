@@ -109,9 +109,11 @@ NEW_REV="$(git rev-parse HEAD)"
 
 # Variabel baru di .env.example yang belum ada di .env — app bisa gagal start karena ini.
 if [[ -f .env.example ]]; then
-  MISSING_KEYS="$(comm -23 \
-    <(grep -oE '^[A-Z_][A-Z0-9_]*=' .env.example | sort -u) \
-    <(grep -oE '^[A-Z_][A-Z0-9_]*=' .env | sort -u) | tr -d '=' | tr '\n' ' ')"
+  # LC_ALL=C: collation en_US tidak konsisten antara sort dan comm untuk nama seperti
+  # PLACE_/PLACES_, lalu comm exit 1 dan set -e mematikan script tanpa pesan.
+  MISSING_KEYS="$(LC_ALL=C comm -23 \
+    <(grep -oE '^[A-Z_][A-Z0-9_]*=' .env.example | LC_ALL=C sort -u) \
+    <(grep -oE '^[A-Z_][A-Z0-9_]*=' .env | LC_ALL=C sort -u) | tr -d '=' | tr '\n' ' ')"
   if [[ -n "$MISSING_KEYS" ]]; then
     log "PERINGATAN: variabel di .env.example yang belum ada di .env: $MISSING_KEYS"
   fi
