@@ -16,11 +16,14 @@ import { serverToolsFor } from "../servers/registry.js";
 import { SshError } from "../servers/ssh.js";
 import {
   addUserServer,
+  listUserServers,
   recordCheckOutcome,
   removeUserServer,
   resolveServer,
   summarizeServers,
 } from "../servers/userServers.js";
+import { findAction, listActions, serverActionsFor, type ServerRunPayload } from "../servers/actions.js";
+import { ACTION_MINUTES, createAction } from "../actions/pending.js";
 import { cancelReminder, createReminder, listReminders } from "../reminders/store.js";
 import { alignFirst, formatRepeat, parseRepeat, RepeatError, type Repeat } from "../reminders/repeat.js";
 import { errorMessage, formatDate, formatDateTime, normalizePhone } from "../util.js";
@@ -252,6 +255,30 @@ export const SERVER_TOOL_DEFS: BetaTool[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "server_run",
+    description: [
+      "Run one of the user's saved server actions, by name — a deploy, a restart, a script they set up earlier. Use server_actions to see what exists on which server.",
+      "Nothing runs from this call: right after your reply the user sees the exact command with a Jalankan button, and it runs only if they tap it. Say in one short sentence what is waiting for their confirmation.",
+      "You cannot write a command yourself. If there is no saved action for what they want, say so and tell them how to make one: they send `aksi <server> <nama>: <perintah>` to save it, or `jalankan di <server>: <perintah>` to run it once. You may suggest the exact command text in your reply for them to send.",
+    ].join("\n\n"),
+    input_schema: {
+      type: "object",
+      properties: {
+        server: { type: "string", description: SERVER_NAME_HINT },
+        action: { type: "string", description: "The saved action name, e.g. deploy." },
+      },
+      required: ["server", "action"],
+    },
+  },
+  {
+    name: "server_actions",
+    description: "List the saved actions for one of the user's servers, or for all of them when server is omitted: what each one is called and what it does.",
+    input_schema: {
+      type: "object",
+      properties: { server: { type: "string", description: SERVER_NAME_HINT } },
+    },
+  },
+  {
     name: "server_remove",
     description:
       "Disconnect one of the user's servers from Milo and delete Milo's key for it. Only when the user asks. Afterwards, tell them they can also delete the line ending in that server's name from ~/.ssh/authorized_keys on the server.",
@@ -389,6 +416,8 @@ const inputs = {
     only_errors: z.union([z.boolean(), z.stringbool()]).optional(),
   }),
   server_list: z.object({}).loose(),
+  server_run: z.object({ server: z.string().min(1).max(40), action: z.string().min(1).max(30) }),
+  server_actions: z.object({ server: z.string().max(40).optional() }),
   server_remove: z.object({ name: z.string().min(1).max(40) }),
 } as const;
 
@@ -808,6 +837,46 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
     if (!serverToolsFor(user.waId)) return fail(NO_SERVER_ACCESS);
     const servers = await summarizeServers(user, DOCKER_CHECKS);
     return ok(servers.length ? servers : "Belum ada server. Hubungkan dengan server_add.");
+  },
+
+  async server_run({ user }, { server, action }) {
+    if (!serverToolsFor(user.waId)) return fail(NO_SERVER_ACCESS);
+    if (!serverActionsFor(user.waId)) return fail("Menjalankan perintah di server belum diaktifkan untuk pengguna ini.");
+    const saved = await findAction(user, server, action);
+    if (!saved) {
+      const known = await listActions(user, server);
+      return fail(
+        known.length
+          ? `Server "${server}" tidak punya aksi "${action}". Yang ada: ${known.map((a) => a.name).join(", ")}.`
+          : `Server "${server}" belum punya aksi tersimpan. Pengguna bisa membuatnya dengan: aksi ${server} <nama>: <perintah>`,
+      );
+    }
+    const payload: ServerRunPayload = { server: server.trim().toLowerCase(), action: saved.name, command: saved.command, timeoutSec: saved.timeoutSec };
+    const pending = await createAction(user.id, "server_run", payload);
+    return ok({
+      status: "menunggu konfirmasi pengguna",
+      server: payload.server,
+      action: saved.name,
+      expires_in_minutes: ACTION_MINUTES,
+      draft_id: Number(pending.id),
+    });
+  },
+
+  async server_actions({ user }, { server }) {
+    if (!serverToolsFor(user.waId)) return fail(NO_SERVER_ACCESS);
+    const names = server ? [server.trim().toLowerCase()] : (await listUserServers(user.id)).map((r) => r.name);
+    const out: { server: string; action: string; description: string; command: string }[] = [];
+    for (const name of names) {
+      for (const a of await listActions(user, name)) {
+        out.push({ server: name, action: a.name, description: a.description, command: a.command });
+      }
+    }
+    if (!out.length) {
+      return ok(
+        `Belum ada aksi tersimpan${server ? ` untuk server "${server}"` : ""}. Pengguna membuatnya sendiri dengan: aksi <server> <nama>: <perintah>`,
+      );
+    }
+    return ok(out);
   },
 
   async server_remove({ user }, { name }) {

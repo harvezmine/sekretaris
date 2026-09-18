@@ -11,6 +11,8 @@ melihat password pengguna.
 | Gmail | kirim/balas email | `gmail.send` | sensitif |
 | Gmail | cari & baca email, simpan lampiran | `gmail.readonly` | **restricted** |
 | Drive | simpan file ke folder "Milo", baca file buatan Milo | `drive.file` | non-sensitif |
+| Docs | tulis notulen/surat jadi Google Docs | `drive.file` (tanpa izin baru) | non-sensitif |
+| Sheets | catat omzet/pengeluaran ke spreadsheet buatan Milo | `drive.file` (tanpa izin baru) | non-sensitif |
 | Drive | cari & baca semua file | `drive.readonly` | **restricted** |
 | Kontak | cari nomor & email orang dari kontak Google pengguna | `contacts.readonly` | sensitif |
 

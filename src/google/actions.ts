@@ -8,6 +8,13 @@ export interface MailPayload extends SendRequest {
   replyToFrom?: string | undefined;
 }
 
+/** The kinds this file handles; a server run is confirmed the same way but executed elsewhere. */
+export type GoogleAction = PendingAction & { kind: "gmail_send" | "calendar_invite" | "calendar_delete" };
+
+export function isGoogleAction(action: PendingAction): action is GoogleAction {
+  return action.kind !== "server_run";
+}
+
 export interface DeletePayload {
   eventId: string;
   title: string;
@@ -17,7 +24,7 @@ export interface DeletePayload {
   attendees: number;
 }
 
-export function actionPreview(action: PendingAction, user: UserRow): string {
+export function actionPreview(action: GoogleAction, user: UserRow): string {
   const tz = user.timezone;
   switch (action.kind) {
     case "gmail_send": {
@@ -55,7 +62,7 @@ export function actionPreview(action: PendingAction, user: UserRow): string {
   }
 }
 
-export async function actionQuestion(action: PendingAction, user: UserRow): Promise<string> {
+export async function actionQuestion(action: GoogleAction, user: UserRow): Promise<string> {
   const account = await getAccount(user.id);
   const from = account?.email ? ` dari ${account.email}` : "";
   const ask =
@@ -75,7 +82,7 @@ export interface ActionOutcome {
   note: string;
 }
 
-export async function runAction(action: PendingAction, user: UserRow): Promise<ActionOutcome> {
+export async function runAction(action: GoogleAction, user: UserRow): Promise<ActionOutcome> {
   try {
     switch (action.kind) {
       case "gmail_send": {

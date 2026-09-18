@@ -8,7 +8,7 @@ import type { Button } from "../wa/client.js";
 
 export const ACTION_MINUTES = 15;
 
-export type ActionKind = "gmail_send" | "calendar_invite" | "calendar_delete";
+export type ActionKind = "gmail_send" | "calendar_invite" | "calendar_delete" | "server_run";
 
 export interface PendingAction<P = Record<string, unknown>> {
   id: string;
@@ -71,8 +71,15 @@ export async function cancelAction(userId: string, id: string): Promise<PendingA
   return row;
 }
 
+const YES_LABEL: Record<ActionKind, string> = {
+  gmail_send: "Kirim",
+  calendar_invite: "Kirim undangan",
+  calendar_delete: "Hapus",
+  server_run: "Jalankan",
+};
+
 export function actionButtons(action: Pick<PendingAction, "id" | "kind">): Button[] {
-  const yes = action.kind === "calendar_delete" ? "Hapus" : action.kind === "calendar_invite" ? "Kirim undangan" : "Kirim";
+  const yes = YES_LABEL[action.kind] ?? "Kirim";
   return [
     { id: `act_yes:${action.id}`, title: yes },
     { id: `act_no:${action.id}`, title: "Batal" },

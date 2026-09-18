@@ -80,7 +80,7 @@ export async function importDriveFile(userId: string, fileId: string): Promise<{
   return { file, ...saved };
 }
 
-async function miloFolder(userId: string): Promise<string> {
+export async function miloFolder(userId: string): Promise<string> {
   const found = await callGoogle<{ files?: { id: string }[] }>(userId, WRITE, {
     url: FILES,
     query: {
@@ -100,20 +100,28 @@ async function miloFolder(userId: string): Promise<string> {
   return created.id;
 }
 
-/** Uploads a saved capture's original file into the user's "Milo" folder. */
-export async function saveToDrive(
-  userId: string,
-  capture: Pick<CaptureRow, "title" | "mime" | "filePath" | "textContent">,
-  name?: string,
-): Promise<DriveFile> {
-  const data = capture.filePath ? await readFile(capture.filePath) : Buffer.from(capture.textContent ?? "", "utf8");
-  const mime = capture.filePath ? (capture.mime ?? "application/octet-stream") : "text/plain";
+export interface UploadInput {
+  name: string;
+  mime: string;
+  data: Buffer;
+  /** A Google type to convert the upload into, e.g. a Docs document or a Sheets spreadsheet. */
+  convertTo?: string | undefined;
+  appProperties?: Record<string, string> | undefined;
+}
+
+/** One multipart upload into the user's "Milo" folder, optionally converted to a native Google file. */
+export async function uploadToDrive(userId: string, input: UploadInput): Promise<DriveFile> {
   const folder = await miloFolder(userId);
   const boundary = `milo-${randomBytes(12).toString("hex")}`;
-  const metadata = JSON.stringify({ name: name ?? capture.title, parents: [folder] });
+  const metadata = JSON.stringify({
+    name: input.name,
+    parents: [folder],
+    ...(input.convertTo ? { mimeType: input.convertTo } : {}),
+    ...(input.appProperties ? { appProperties: input.appProperties } : {}),
+  });
   const body = Buffer.concat([
-    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`),
-    data,
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${input.mime}\r\n\r\n`),
+    input.data,
     Buffer.from(`\r\n--${boundary}--\r\n`),
   ]);
   return callGoogle<DriveFile>(userId, WRITE, {
@@ -123,4 +131,15 @@ export async function saveToDrive(
     headers: { "content-type": `multipart/related; boundary=${boundary}` },
     body: new Uint8Array(body),
   });
+}
+
+/** Uploads a saved capture's original file into the user's "Milo" folder. */
+export async function saveToDrive(
+  userId: string,
+  capture: Pick<CaptureRow, "title" | "mime" | "filePath" | "textContent">,
+  name?: string,
+): Promise<DriveFile> {
+  const data = capture.filePath ? await readFile(capture.filePath) : Buffer.from(capture.textContent ?? "", "utf8");
+  const mime = capture.filePath ? (capture.mime ?? "application/octet-stream") : "text/plain";
+  return uploadToDrive(userId, { name: name ?? capture.title, mime, data });
 }

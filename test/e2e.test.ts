@@ -9,6 +9,7 @@ import { Agent } from "../src/agent/run.ts";
 import { runTool } from "../src/agent/tools.ts";
 import { getUser, migrate, sql, type UserRow } from "../src/db/index.ts";
 import { createCodes } from "../src/onboarding/codes.ts";
+import { addUserServer } from "../src/servers/userServers.ts";
 import { isoInZone } from "../src/util.ts";
 import { DryRunClient, type DryRunEntry } from "../src/wa/client.ts";
 import { tinyPdf } from "./helpers.ts";
@@ -261,6 +262,42 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
 
     const unauthorized = await ctx.app.inject({ method: "POST", url: "/admin/payments/manual-ref-1/paid" });
     assert.equal(unauthorized.statusCode, 401);
+  });
+
+  test("a server command typed by the user is queued for a tap, never run on the spot", async () => {
+    const u = "6281100000042";
+    const user = await makeReadyUser(u);
+    agentCalls.length = 0;
+    const original = { ...config };
+    try {
+      Object.assign(config, { SERVER_ACCESS: "all", SERVER_ACTION_ACCESS: "all" });
+      await addUserServer(user, { name: "sigma", host: "203.0.113.50", user: "deploy" });
+
+      await send(u, [text(u, "aksi sigma deploy: cd /home/app && ./deploy.sh")]);
+      assert.match(lastOut(u)!.text!, /Aksi \*deploy\* tersimpan untuk \*sigma\*/);
+      assert.match(lastOut(u)!.text!, /cd \/home\/app && \.\/deploy\.sh/);
+
+      await send(u, [text(u, "aksi sigma")]);
+      assert.match(lastOut(u)!.text!, /\*deploy\*/);
+
+      await send(u, [text(u, "jalankan di sigma: docker compose restart app")]);
+      const [preview, question] = outFor(u).slice(-2);
+      assert.match(preview!.text!, /Jalankan perintah ini di sigma\?/);
+      assert.match(preview!.text!, /docker compose restart app/);
+      assert.deepEqual(question!.buttons!.map((b) => b.title), ["Jalankan", "Batal"]);
+      const [pending] = await sql<{ kind: string; status: string }[]>`
+        select kind, status from pending_actions where user_id = ${user.id} order by id desc limit 1
+      `;
+      assert.equal(pending!.kind, "server_run");
+      assert.equal(pending!.status, "pending", "nothing runs until the button is tapped");
+      assert.equal(agentCalls.length, 0, "the model is never asked about a command the user typed");
+
+      await send(u, [button(u, `act_no:${(await sql<{ id: string }[]>`select id from pending_actions where user_id = ${user.id} order by id desc limit 1`)[0]!.id}`)]);
+      assert.match(lastOut(u)!.text!, /dibatalkan/i);
+    } finally {
+      Object.assign(config, original);
+      await sql`delete from user_servers where user_id = ${user.id}`;
+    }
   });
 
   test("active users: debounced turns, captures without the model, contacts, voice and unsupported types", async () => {

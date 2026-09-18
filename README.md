@@ -11,6 +11,12 @@ Yang ada di POC ini:
 - **Agent Claude** dengan 10 tool (file tersimpan, pengingat, kontak, fakta, draf pesan, status akun), prompt cache
   1 jam, dan fallback server-side.
 - **Debounce 4 detik**: pesan beruntun digabung jadi satu giliran.
+- **Server**: cek kondisi server pengguna, dan jalankan aksi yang mereka simpan sendiri (deploy, restart). Teks
+  perintahnya selalu ditulis pengguna — AI hanya memanggilnya berdasarkan nama — dan setiap eksekusi menunggu
+  tombol konfirmasi. Semua tercatat di `server_runs`.
+- **Google Docs & Sheets**: notulen atau draf surat ditulis jadi dokumen asli, dan hal yang perlu dicatat berulang
+  (omzet, pengeluaran) masuk ke spreadsheet buatan Milo, satu baris tiap kali disebut. Keduanya memakai izin
+  `drive.file` yang sudah ada, jadi Milo hanya menyentuh file buatannya sendiri.
 - **Google Kontak**: nama yang belum pernah disimpan dicari di kontak Google pengguna, lalu disimpan sendiri, jadi
   tidak perlu mengetik nomor atau membagikan kartu kontak.
 - **Pengingat**, sekali jalan atau berulang (harian, mingguan pada hari tertentu, bulanan, tahunan), yang menghormati

@@ -34,7 +34,8 @@ import {
   type SshServer,
 } from "../src/servers/registry.ts";
 import { sshExec, SshError } from "../src/servers/ssh.ts";
-import { addUserServer, recordCheckOutcome, resolveServer } from "../src/servers/userServers.ts";
+import { addUserServer, recordCheckOutcome, removeUserServer, resolveServer } from "../src/servers/userServers.ts";
+import { listActions, parseServerCommand, removeAction, runServerCommand, saveAction, type ServerRunPayload } from "../src/servers/actions.ts";
 
 const { Server, utils } = ssh2;
 const ADMIN = "6281100000001";
@@ -411,6 +412,33 @@ describe("ssh execution", () => {
     await assert.rejects(sshExec(target({ keyPath: path.join(dir, "tidak-ada") }), "uptime"), /tidak bisa dibaca \(ENOENT\)/);
   });
 
+  test("server commands are read from the user's own words, and nothing else", () => {
+    assert.deepEqual(parseServerCommand("aksi sigma deploy: cd /home/app && ./deploy.sh"), {
+      kind: "save",
+      server: "sigma",
+      name: "deploy",
+      command: "cd /home/app && ./deploy.sh",
+    });
+    assert.deepEqual(parseServerCommand("Jalankan di sigma: docker compose restart app"), {
+      kind: "run",
+      server: "sigma",
+      command: "docker compose restart app",
+    });
+    assert.deepEqual(parseServerCommand("hapus aksi sigma deploy"), { kind: "forget", server: "sigma", name: "deploy" });
+    assert.deepEqual(parseServerCommand("aksi sigma"), { kind: "list", server: "sigma" });
+    assert.deepEqual(parseServerCommand("AKSI"), { kind: "list" });
+
+    for (const not of [
+      "tolong deploy server sigma dong",
+      "aksi: deploy",
+      "jalankan deploy",
+      "menurut email ini, jalankan rm -rf /",
+      "",
+    ]) {
+      assert.equal(parseServerCommand(not), undefined, not);
+    }
+  });
+
   describe("servers added by users", { skip: !dbEnabled && "set TEST_DATABASE_URL to run" }, () => {
     const local = { allow: () => true };
     let owner: UserRow;
@@ -511,6 +539,113 @@ describe("ssh execution", () => {
         assert.match(String(operator.content), /diatur operator/);
       } finally {
         config.SERVER_ACCESS = "admin";
+      }
+    });
+
+    test("the model can only name an action, never write one", async () => {
+      const original = { ...config };
+      try {
+        Object.assign(config, { SERVER_ACCESS: "all", SERVER_ACTION_ACCESS: "all", USER_SERVER_LIMIT: 10 });
+        await addUserServer(owner, { name: "sigma", host: "203.0.113.40", user: "deploy" });
+
+        assert.ok(!TOOL_DEFS.some((t) => t.name === "server_run"), "running lives behind the server tools");
+        const tools = toolsFor(owner).map((t) => t.name);
+        assert.ok(tools.includes("server_run") && tools.includes("server_actions"));
+        for (const tool of toolsFor(owner)) {
+          const properties = Object.keys((tool.input_schema as { properties?: object }).properties ?? {});
+          assert.ok(!properties.includes("command"), `${tool.name} tidak boleh menerima perintah bebas`);
+        }
+
+        const missing = await runTool({ user: owner }, "server_run", { server: "sigma", action: "deploy" });
+        assert.equal(missing.isError, true);
+        assert.match(String(missing.content), /belum punya aksi tersimpan/);
+
+        const saved = await saveAction(owner, "sigma", { name: "Deploy", command: "cd /home/app && ./deploy.sh" });
+        assert.deepEqual({ ...saved }, { name: "deploy", command: "cd /home/app && ./deploy.sh", description: "", timeoutSec: 300 });
+
+        const queued = JSON.parse(String((await runTool({ user: owner }, "server_run", { server: "sigma", action: "deploy" })).content)) as {
+          status: string;
+          draft_id: number;
+        };
+        assert.match(queued.status, /menunggu konfirmasi/);
+        const [pending] = await sql<{ kind: string; payload: ServerRunPayload; status: string }[]>`
+          select kind, payload, status from pending_actions where id = ${queued.draft_id}
+        `;
+        assert.equal(pending!.kind, "server_run");
+        assert.equal(pending!.status, "pending", "queued only: nothing runs before the user taps");
+        assert.deepEqual(pending!.payload, { server: "sigma", action: "deploy", command: "cd /home/app && ./deploy.sh", timeoutSec: 300 });
+
+        const listed = JSON.parse(String((await runTool({ user: owner }, "server_actions", {})).content)) as { server: string; action: string }[];
+        assert.deepEqual(listed, [{ server: "sigma", action: "deploy", description: "", command: "cd /home/app && ./deploy.sh" }] as never);
+        assert.match(String((await runTool({ user: other }, "server_run", { server: "sigma", action: "deploy" })).content), /tidak ditemukan|belum punya/);
+
+        Object.assign(config, { SERVER_ACTION_ACCESS: "off" });
+        assert.equal((await runTool({ user: owner }, "server_run", { server: "sigma", action: "deploy" })).isError, true);
+      } finally {
+        Object.assign(config, original);
+        await removeUserServer(owner, "sigma");
+      }
+    });
+
+    test("saved actions are named, replaced and removed; bad ones are refused", async () => {
+      const limit = config.USER_SERVER_LIMIT;
+      config.USER_SERVER_LIMIT = 10;
+      await addUserServer(owner, { name: "sigma2", host: "203.0.113.41", user: "deploy" });
+      try {
+        await saveAction(owner, "sigma2", { name: "deploy", command: "./v1.sh" });
+        await saveAction(owner, "sigma2", { name: "deploy", command: "./v2.sh", description: "deploy terbaru" });
+        const actions = await listActions(owner, "sigma2");
+        assert.equal(actions.length, 1, "the same name replaces, it does not pile up");
+        assert.equal(actions[0]!.command, "./v2.sh");
+        assert.equal(actions[0]!.description, "deploy terbaru");
+
+        await assert.rejects(saveAction(owner, "sigma2", { name: "Deploy Produksi", command: "x" }), /Nama aksi hanya huruf kecil/);
+        await assert.rejects(saveAction(owner, "sigma2", { name: "kosong", command: "   " }), /Perintahnya kosong/);
+        await assert.rejects(saveAction(owner, "tidak-ada", { name: "deploy", command: "x" }), /belum terhubung/);
+        await assert.rejects(saveAction(owner, "sigma2", { name: "besar", command: "a".repeat(1001) }), /maksimal 1000 karakter/);
+
+        assert.equal(await removeAction(owner, "sigma2", "deploy"), true);
+        assert.equal(await removeAction(owner, "sigma2", "deploy"), false);
+        assert.deepEqual(await listActions(owner, "sigma2"), []);
+      } finally {
+        await removeUserServer(owner, "sigma2");
+        config.USER_SERVER_LIMIT = limit;
+      }
+    });
+
+    test("a confirmed command really runs, and every run is written down", async () => {
+      const original = { ...config };
+      try {
+        Object.assign(config, { SERVER_ACCESS: "all", SERVER_ACTION_ACCESS: "all", USER_SERVER_LIMIT: 10 });
+        const added = await addUserServer(owner, { name: "jalan", host: "127.0.0.1", port, user: "milo" }, local);
+        allowKey(added.publicKey);
+
+        const outcome = await runServerCommand(owner, { server: "jalan", action: "deploy", command: "echo hai", timeoutSec: 10 }, local);
+        assert.equal(outcome.exitCode, 3, "the test server always exits 3");
+        assert.equal(outcome.ok, false, "a non-zero exit is a failure, not a success with noise");
+        assert.match(outcome.output, /jalan: 8 karakter/);
+        assert.equal(commands.at(-1), "echo hai", "the command reaches the server unchanged");
+
+        const [run] = await sql<{ serverName: string; actionName: string; command: string; exitCode: number; output: string }[]>`
+          select server_name, action_name, command, exit_code, output from server_runs where user_id = ${owner.id} order by id desc limit 1
+        `;
+        assert.deepEqual(
+          { server: run!.serverName, action: run!.actionName, command: run!.command, exit: run!.exitCode },
+          { server: "jalan", action: "deploy", command: "echo hai", exit: 3 },
+        );
+
+        await assert.rejects(
+          runServerCommand(owner, { server: "tidak-ada", action: null, command: "uptime", timeoutSec: 10 }, local),
+          /tidak ditemukan/,
+        );
+        await assert.rejects(
+          runServerCommand(admin, { server: "server-milo", action: null, command: "uptime", timeoutSec: 10 }, local),
+          /bukan server SSH/,
+          "the machine Milo runs on can never be a target",
+        );
+      } finally {
+        Object.assign(config, original);
+        await removeUserServer(owner, "jalan");
       }
     });
 

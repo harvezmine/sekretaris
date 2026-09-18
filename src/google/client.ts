@@ -30,6 +30,7 @@ export const ENDPOINTS = {
   gmail: "https://gmail.googleapis.com/gmail/v1",
   drive: "https://www.googleapis.com/drive/v3",
   people: "https://people.googleapis.com/v1",
+  sheets: "https://sheets.googleapis.com/v4",
   driveUpload: "https://www.googleapis.com/upload/drive/v3",
 } as const;
 

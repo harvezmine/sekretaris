@@ -29,6 +29,7 @@ import { preboardReply } from "./onboarding/preboard.js";
 import {
   actionButtons,
   cancelAction,
+  createAction,
   claimAction,
   finishAction,
   getAction,
@@ -36,7 +37,23 @@ import {
   pendingActionAfter,
   type PendingAction,
 } from "./actions/pending.js";
-import { actionPreview, actionQuestion, runAction } from "./google/actions.js";
+import { actionPreview, actionQuestion, isGoogleAction, runAction } from "./google/actions.js";
+import {
+  cleanCommand,
+  DEFAULT_TIMEOUT_SEC,
+  listActions,
+  parseServerCommand,
+  removeAction,
+  runServerAction,
+  saveAction,
+  serverActionPreview,
+  serverActionQuestion,
+  serverActionsFor,
+  ServerActionError,
+  ServerSetupError,
+  type ServerCommand,
+  type ServerRunPayload,
+} from "./servers/actions.js";
 import {
   disconnect as disconnectGoogle,
   enabledServices,
@@ -49,7 +66,7 @@ import {
 } from "./google/client.js";
 import { CONNECT_MINUTES, connectUrlFor } from "./google/connect.js";
 import { serverToolsFor } from "./servers/registry.js";
-import { listUserServers } from "./servers/userServers.js";
+import { listUserServers, resolveServer } from "./servers/userServers.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona, personaMenu } from "./persona/catalog.js";
 import { agendaText } from "./profile/agenda.js";
 import { normalizeCallName, normalizeWork, profileSummary, updateProfile } from "./profile/profile.js";
@@ -467,7 +484,12 @@ export class Pipeline {
     for (const action of new Set(incoming.map(actionOf))) {
       if (action) await this.handleQuickAction(user, action);
     }
-    const batch = incoming.filter((m) => !actionOf(m));
+    const commandOf = (m: PendingMessage) => (m.inbound.kind === "text" && !actionOf(m) ? parseServerCommand(m.inbound.text) : undefined);
+    for (const m of incoming) {
+      const command = commandOf(m);
+      if (command) await this.handleServerCommand(user, command);
+    }
+    const batch = incoming.filter((m) => !actionOf(m) && !commandOf(m));
 
     const notes: string[] = [];
     const replies: string[] = [];
@@ -609,6 +631,50 @@ export class Pipeline {
     if (google) {
       const action = await pendingActionAfter(user.id, actionMark);
       if (action) await this.askActionConfirmation(user, action);
+    }
+  }
+
+  /**
+   * Server commands the user types in full. Milo never composes these, and never runs one straight away: a run is
+   * queued as a confirmation the user has to tap, the same as sending an email.
+   */
+  private async handleServerCommand(user: UserRow, command: ServerCommand): Promise<void> {
+    const note = `[Perintah server: ${command.kind}]`;
+    if (!serverToolsFor(user.waId)) return this.replyStatic(user, note, copy.SERVER_TEXT.noAccess);
+    if (command.kind !== "list" && !serverActionsFor(user.waId)) return this.replyStatic(user, note, copy.SERVER_TEXT.actionsOff);
+
+    try {
+      switch (command.kind) {
+        case "save": {
+          const saved = await saveAction(user, command.server, { name: command.name, command: command.command });
+          return this.replyStatic(user, note, copy.actionSaved(command.server, saved.name, saved.command));
+        }
+        case "forget": {
+          const removed = await removeAction(user, command.server, command.name);
+          return this.replyStatic(user, note, removed ? copy.actionForgotten(command.server, command.name) : copy.actionUnknown(command.server, command.name));
+        }
+        case "list": {
+          const servers = command.server ? [command.server] : (await listUserServers(user.id)).map((r) => r.name);
+          const listed = await Promise.all(servers.map(async (name) => ({ server: name, actions: await listActions(user, name) })));
+          return this.replyStatic(user, note, copy.actionList(listed));
+        }
+        case "run": {
+          const resolved = await resolveServer(user, command.server);
+          if (!resolved) return this.replyStatic(user, note, copy.actionUnknownServer(command.server));
+          const payload: ServerRunPayload = {
+            server: command.server,
+            action: null,
+            command: cleanCommand(command.command),
+            timeoutSec: DEFAULT_TIMEOUT_SEC,
+          };
+          const pending = await createAction(user.id, "server_run", payload);
+          await recordStaticExchange(user, (await this.d.agent.modelFor(user).catch(() => null)) ?? "-", note, copy.SERVER_TEXT.queued);
+          return this.askActionConfirmation(user, pending);
+        }
+      }
+    } catch (err) {
+      if (err instanceof ServerActionError || err instanceof ServerSetupError) return this.replyStatic(user, note, `⚠️ ${err.message}`);
+      throw err;
     }
   }
 
@@ -840,8 +906,10 @@ export class Pipeline {
   // ---- actions that wait for a tap -------------------------------------------------------------------------------------
 
   private async askActionConfirmation(user: UserRow, action: PendingAction): Promise<void> {
-    await this.d.outbox.text(user, actionPreview(action, user), { raw: true });
-    await this.d.outbox.buttons(user, await actionQuestion(action, user), actionButtons(action));
+    const google = isGoogleAction(action);
+    await this.d.outbox.text(user, google ? actionPreview(action, user) : serverActionPreview(action), { raw: true });
+    const question = google ? await actionQuestion(action, user) : serverActionQuestion(action);
+    await this.d.outbox.buttons(user, question, actionButtons(action));
   }
 
   private async handleActionButton(user: UserRow, yes: boolean, id: string): Promise<void> {
@@ -857,9 +925,9 @@ export class Pipeline {
       const text = existing?.status === "done" ? copy.CONNECT_TEXT.actionDone : copy.CONNECT_TEXT.actionUnavailable;
       return this.replyStatic(user, "[Pengguna menekan tombol konfirmasi yang sudah tidak berlaku]", text);
     }
-    const outcome = await runAction(action, user);
+    const outcome = isGoogleAction(action) ? await runAction(action, user) : await runServerAction(action, user);
     await finishAction(action.id, outcome.ok ? "done" : "failed", outcome.text);
-    if (!outcome.ok) this.d.log.warn({ userId: user.id, actionId: id, kind: action.kind }, "aksi Google gagal");
+    if (!outcome.ok) this.d.log.warn({ userId: user.id, actionId: id, kind: action.kind }, "aksi yang dikonfirmasi gagal");
     await this.replyStatic(user, outcome.note, outcome.text);
   }
 

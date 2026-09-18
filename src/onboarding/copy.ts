@@ -204,11 +204,54 @@ export const CONNECT_TEXT = {
   actionDone: "Itu sudah dilakukan sebelumnya.",
 };
 
+export const SERVER_TEXT = {
+  noAccess: "Fitur server belum aktif untuk nomor ini.",
+  actionsOff: "Menjalankan perintah di server belum diaktifkan di Milo ini.",
+  queued: "Perintahnya siap, menunggu konfirmasi Anda.",
+  help:
+    "🖥️ *Perintah server*\n" +
+    "• _aksi sigma deploy: cd /home/app && ./deploy.sh_ — simpan sekali, lalu cukup bilang \"deploy sigma\"\n" +
+    "• _jalankan di sigma: docker compose restart app_ — sekali pakai\n" +
+    "• _aksi sigma_ — lihat yang tersimpan · _hapus aksi sigma deploy_\n\n" +
+    "_Perintahnya selalu Anda yang tulis, dan tidak ada yang jalan sebelum Anda menekan Jalankan._",
+};
+
+export function actionSaved(server: string, name: string, command: string): string {
+  return `✅ Aksi *${name}* tersimpan untuk *${server}*:\n\n\`\`\`\n${command}\n\`\`\`\n\nMulai sekarang cukup bilang: _${name} ${server}_.`;
+}
+
+export function actionForgotten(server: string, name: string): string {
+  return `Aksi *${name}* di *${server}* dihapus.`;
+}
+
+export function actionUnknown(server: string, name: string): string {
+  return `Tidak ada aksi *${name}* di *${server}*. Ketik *aksi ${server}* untuk melihat yang ada.`;
+}
+
+export function actionUnknownServer(server: string): string {
+  return `Server *${server}* belum terhubung. Ketik *KONEKSI* untuk menambahkannya.`;
+}
+
+export function actionList(servers: { server: string; actions: { name: string; command: string; description: string }[] }[]): string {
+  const withActions = servers.filter((s) => s.actions.length);
+  if (!withActions.length) return `Belum ada aksi tersimpan.\n\n${SERVER_TEXT.help}`;
+  return [
+    "🖥️ *Aksi tersimpan*",
+    ...withActions.flatMap((s) => [
+      "",
+      `*${s.server}*`,
+      ...s.actions.map((a) => `• *${a.name}* — \`${a.command.length > 80 ? `${a.command.slice(0, 80)}…` : a.command}\``),
+    ]),
+  ].join("\n");
+}
+
 export const QUICK_PROMPTS = {
   reminder:
     "⏰ Mau diingatkan apa, dan kapan?\nContoh: _ingetin besok jam 9 telepon Pak Andi_, _30 menit lagi angkat jemuran_, atau _tiap tanggal 25 ingetin bayar gaji_.",
   message: "✉️ Mau kirim pesan ke siapa, dan isinya apa?\nContoh: _kabari Pak Andi 0812-xxxx, rapat jadi jam 3_. Bagikan kartu kontaknya kalau belum tersimpan.",
-  server: "🖥️ Mau cek apa di server?\nContoh: _server saya aman?_, _ada error apa di aplikasi saya?_, atau _hubungkan server saya: user@alamat-ip port 22_.",
+  server:
+    "🖥️ Mau cek apa di server?\nContoh: _server saya aman?_, _ada error apa di aplikasi saya?_, atau _hubungkan server saya: user@alamat-ip port 22_.\n\n" +
+    SERVER_TEXT.help,
 };
 
 export function helpText(opts: { attachments: boolean; servers: boolean; google?: boolean }): string {
@@ -232,7 +275,9 @@ export function helpText(opts: { attachments: boolean; servers: boolean; google?
     "*Tentang Anda*",
     "• _panggil saya Pak Josh_ · _jawab lebih singkat_",
     "• _ringkasan pagi jam 6_ · _ingat: saya tidak minum kopi_",
-    ...(opts.servers ? ["", "*Server*", "• _server saya aman?_ · _cek error aplikasi saya_"] : []),
+    ...(opts.servers
+      ? ["", "*Server*", "• _server saya aman?_ · _cek error aplikasi saya_", "• _aksi sigma deploy: ./deploy.sh_ lalu _deploy sigma_ (Anda yang tekan Jalankan)"]
+      : []),
     "",
     ...(opts.google
       ? ["", "*Google*", "• _agenda minggu ini_ · _cari waktu kosong 1 jam besok_", "• _email penting hari ini apa?_ · _balas email Andi, bilang oke_", "• _cari proposal di Drive_ · _simpan file tadi ke Drive_"]

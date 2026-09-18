@@ -1,4 +1,4 @@
-# Akses server lewat Milo (hanya-baca)
+# Akses server lewat Milo
 
 Pengguna bisa menghubungkan server Linux miliknya ke Milo lewat chat, lalu bertanya misalnya:
 
@@ -9,7 +9,7 @@ Pengguna bisa menghubungkan server Linux miliknya ke Milo lewat chat, lalu berta
 - "cek log nginx"
 - "tokoku.com bisa dibuka dari server?"
 
-Milo hanya bisa **membaca**. Tidak ada restart, deploy, hapus file, atau perintah bebas. Setiap cek menjalankan
+Untuk **membaca**, Milo hanya punya daftar cek tetap: tidak ada perintah bebas. Setiap cek menjalankan
 perintah tetap dari daftar di `src/servers/checks.ts`, dan nama container, nama layanan, folder, serta URL
 divalidasi dulu. File yang bisa dibaca hanya file log (di bawah `/var/log/` atau berakhiran `.log`, `.out`, atau
 `.err`). Token, password, dan API key di keluaran disamarkan sebelum dibaca model.
@@ -22,7 +22,8 @@ divalidasi dulu. File yang bisa dibaca hanya file log (di bawah `/var/log/` atau
 Di `.env`:
 
 ```
-SERVER_ACCESS=all                 # off | admin | all
+SERVER_ACCESS=all                 # off | admin | all — melihat server
+SERVER_ACTION_ACCESS=all          # off | admin | all — menjalankan perintah
 SERVER_KEY_SECRET=<openssl rand -hex 32>
 USER_SERVER_LIMIT=3
 SERVER_ADMIN_NUMBERS=6281234567890
@@ -118,6 +119,39 @@ docker compose exec app node dist/cli.js app-logs <server>/<app> --errors
 Semua cek log bisa diberi `only_errors`: Milo memindai jendela log 20× lebih panjang dan menyisakan baris yang
 terlihat seperti error. Log dibatasi 10–300 baris (default 80), dan tiap keluaran dipotong di 8.000 karakter.
 
-## Belum ada
+## Menjalankan perintah (deploy, restart)
 
-Deploy dan restart. Milo belum bisa menjalankan perintah yang mengubah server.
+Selain membaca, Milo bisa menjalankan perintah di server pengguna. Dua aturan memagarinya:
+
+1. **Teks perintahnya selalu ditulis pengguna**, tidak pernah oleh AI. AI hanya bisa memanggil aksi yang sudah
+   disimpan, berdasarkan namanya. Ini penting karena Milo membaca email, dokumen, dan balasan orang lain: kalau AI
+   boleh mengarang perintah, satu kalimat jahat di dalam email bisa berubah jadi perintah di server. Dengan aturan
+   ini, isi email tidak pernah bisa sampai ke langkah konfirmasi sama sekali.
+2. **Tidak ada yang berjalan tanpa tombol.** Setiap eksekusi menunggu pengguna menekan *Jalankan*, dan tombol itu
+   ditangani pipeline tanpa AI. Konfirmasi berlaku 15 menit.
+
+Perintah yang dikenali (diproses langsung, tanpa AI):
+
+| Ketik | Artinya |
+| --- | --- |
+| `aksi sigma deploy: cd /home/app && ./deploy.sh` | simpan aksi bernama `deploy` |
+| `deploy sigma` (bahasa bebas) | AI memanggil aksi itu → muncul tombol *Jalankan* |
+| `jalankan di sigma: docker compose restart app` | sekali pakai, langsung muncul tombol |
+| `aksi sigma` · `aksi` | lihat aksi tersimpan |
+| `hapus aksi sigma deploy` | hapus aksi |
+
+Batasnya: perintah maksimal 1000 karakter, 20 aksi per server, 20 eksekusi per jam per pengguna, batas waktu 5
+menit (maksimal 15). Keluaran disensor dari token/password lalu dipotong 3000 karakter terakhir — bagian akhir yang
+disimpan, karena di situlah deploy memberi tahu berhasil atau tidak. Semua eksekusi dicatat di tabel `server_runs`
+lengkap dengan perintah, exit code, durasi, dan keluarannya.
+
+## Yang tidak bisa dijangkau
+
+Server pengguna **wajib beralamat publik**. Nama domain di-resolve dulu, semua alamat hasilnya harus publik, dan IP
+hasil resolve itu yang dipakai menyambung — jadi jawaban DNS yang berubah setelah pengecekan juga gagal. Alamat
+privat (`10.x`, `127.x`, `192.168.x`, `172.16–31.x`, `169.254.x`, `::1`, `fc00::`) ditolak, jadi database Milo dan
+jaringan internalnya tidak bisa disentuh lewat fitur ini.
+
+Mesin tempat Milo sendiri berjalan (`server-milo`, lewat Docker socket proxy) **mati secara default**:
+`DOCKER_PROXY_URL` kosong dan container `dockerproxy` ada di profil `hostcheck`. Kalaupun dinyalakan operator, ia
+hanya bisa dibaca — menjalankan perintah di sana selalu ditolak karena bukan target SSH.

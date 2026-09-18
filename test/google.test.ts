@@ -30,6 +30,7 @@ import { tinyPdf } from "./helpers.ts";
 
 const dbEnabled = Boolean(process.env.TEST_DATABASE_URL);
 const TZ = "Asia/Jakarta";
+const SHEET = "application/vnd.google-apps.spreadsheet";
 const ALL_SCOPES = ["openid", "email", SCOPE.calendar, SCOPE.gmailSend, SCOPE.gmailRead, SCOPE.driveFile, SCOPE.driveRead, SCOPE.contacts];
 
 Object.assign(config, {
@@ -67,6 +68,7 @@ class FakeGoogle {
   folders: { id: string; appProperties: Record<string, string> }[] = [];
   people: Record<string, unknown>[] = [];
   warmups = 0;
+  sheets: { id: string; slug: string; name: string; values: unknown[][] }[] = [];
 
   fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
@@ -163,15 +165,46 @@ class FakeGoogle {
       return json({ results: hits.map((person) => ({ person })) });
     }
 
+    if (url.host === "sheets.googleapis.com") {
+      const [, id, rest] = /^\/v4\/spreadsheets\/([^/]+)\/values\/(.+)$/.exec(path) ?? [];
+      const append = rest?.endsWith(":append") ?? false;
+      const range = append ? rest!.slice(0, -":append".length) : rest;
+      const sheet = this.sheets.find((s) => s.id === decodeURIComponent(id ?? ""));
+      if (!sheet) return json({ error: { message: "Requested entity was not found." } }, 404);
+      if (append) {
+        const rows = (JSON.parse(body) as { values: unknown[][] }).values;
+        sheet.values.push(...rows);
+        return json({ updates: { updatedRows: rows.length } });
+      }
+      if (method === "PUT") {
+        sheet.values[0] = (JSON.parse(body) as { values: unknown[][] }).values[0]!;
+        return json({});
+      }
+      const wanted = decodeURIComponent(range ?? "");
+      const rows = /^A1:[A-Z]1$/.test(wanted) ? sheet.values.slice(0, 1) : sheet.values;
+      return json({ values: rows.filter((r) => r.length) });
+    }
+
     if (url.host === "www.googleapis.com" && path.startsWith("/drive/v3/files")) {
       const q = url.searchParams.get("q") ?? "";
       if (method === "GET" && path === "/drive/v3/files") {
+        if (q.includes("key='miloSheet'")) {
+          const slug = /value='((?:[^'\\]|\\.)*)'/.exec(q)?.[1];
+          const found = this.sheets.filter((sheet) => (slug === undefined ? true : sheet.slug === slug));
+          return json({ files: found.map((sheet) => ({ id: sheet.id, name: sheet.name, mimeType: SHEET, webViewLink: `https://docs.google.com/spreadsheets/d/${sheet.id}` })) });
+        }
         if (q.includes("appProperties")) return json({ files: this.folders.map((f) => ({ id: f.id })) });
         const term = /name contains '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.toLowerCase() ?? "";
         return json({ files: Object.values(this.files).map((f) => f.meta).filter((m) => String(m.name).toLowerCase().includes(term)) });
       }
       if (method === "POST" && path === "/drive/v3/files") {
-        const meta = JSON.parse(body) as { appProperties: Record<string, string> };
+        const meta = JSON.parse(body) as { name: string; appProperties: Record<string, string> };
+        const slug = meta.appProperties?.miloSheet;
+        if (slug) {
+          const sheet = { id: `sheet-${this.sheets.length + 1}`, slug, name: meta.name, values: [] as unknown[][] };
+          this.sheets.push(sheet);
+          return json({ id: sheet.id, name: sheet.name, mimeType: SHEET, webViewLink: `https://docs.google.com/spreadsheets/d/${sheet.id}` });
+        }
         const folder = { id: `folder-${this.folders.length + 1}`, appProperties: meta.appProperties };
         this.folders.push(folder);
         return json({ id: folder.id });
@@ -210,17 +243,20 @@ describe("Google pieces that need no database", () => {
         "calendar_delete",
         "calendar_events",
         "calendar_free_slots",
+        "doc_create",
         "drive_read",
         "drive_save",
         "drive_search",
         "google_connect",
         "google_disconnect",
+        "sheet_append",
+        "sheet_read",
       ]);
     } finally {
       Object.assign(config, { GOOGLE_GMAIL_READ: true, GOOGLE_DRIVE_FULL: true, GOOGLE_SERVICES: "calendar,gmail,drive,contacts" });
     }
     assert.deepEqual(servicesGranted([SCOPE.calendar, SCOPE.gmailSend]), ["calendar"], "gmail needs both scopes while read is on");
-    assert.equal(googleToolDefs().length, 12);
+    assert.equal(googleToolDefs().length, 15);
     try {
       config.GOOGLE_CLIENT_ID = "";
       assert.equal(googleToolDefs().length, 0);
@@ -665,6 +701,67 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     await runTool({ user: u }, "drive_save", { capture_id: doc.capture_id });
     assert.equal(fake.folders.length, 1, "the Milo folder is reused");
     assert.match(String((await runTool({ user: u }, "drive_save", { capture_id: 999999 })).content), /Tidak ada file #999999/);
+  });
+
+  test("docs: what Milo writes becomes a real Google Doc, with the text escaped", async () => {
+    const u = await readyUser("6284400000008");
+    await connect(u.id);
+    const body = ["# Notulen rapat", "Hadir: Josh & <Andi>", "", "- Harga naik 5%", "- *Tenggat* 30 Sep", "", "1. Kirim penawaran"].join("\n");
+    const made = JSON.parse(String((await runTool({ user: u }, "doc_create", { title: "Notulen 18 Sep", body })).content)) as {
+      created: string;
+      link: string;
+    };
+    assert.equal(made.created, "Notulen 18 Sep");
+    assert.match(made.link, /^https:\/\/drive\.google\.com\/file\/d\/up-/);
+
+    const upload = fake.uploads.at(-1)!;
+    assert.match(upload, /"mimeType":"application\/vnd\.google-apps\.document"/, "Drive is asked to convert it into a document");
+    assert.match(upload, /Content-Type: text\/html/);
+    assert.match(upload, /<h1>Notulen rapat<\/h1>/);
+    assert.match(upload, /<ul>\n<li>Harga naik 5%<\/li>\n<li><b>Tenggat<\/b> 30 Sep<\/li>\n<\/ul>/);
+    assert.match(upload, /<ol>\n<li>Kirim penawaran<\/li>\n<\/ol>/);
+    assert.match(upload, /Hadir: Josh &amp; &lt;Andi&gt;/, "the text cannot open a tag of its own");
+  });
+
+  test("sheets: a notebook is created once, grows new columns, and reads back", async () => {
+    const u = await readyUser("6284400000009");
+    await connect(u.id);
+
+    const first = JSON.parse(String((await runTool({ user: u }, "sheet_append", { sheet: "Pengeluaran", fields: { Kategori: "bahan baku", Jumlah: 2000000 } })).content)) as {
+      sheet: string;
+      created: boolean;
+      columns: string[];
+      link: string;
+    };
+    assert.equal(first.sheet, "Pengeluaran");
+    assert.equal(first.created, true);
+    assert.deepEqual(first.columns, ["Tanggal", "Kategori", "Jumlah"], "a log without a date answers nothing later");
+    assert.match(first.link, /^https:\/\/docs\.google\.com\/spreadsheets\/d\/sheet-1/);
+
+    const second = JSON.parse(String((await runTool({ user: u }, "sheet_append", { sheet: "Pengeluaran", fields: { Kategori: "gaji", Jumlah: 15000000, Cabang: "Kemang" } })).content)) as {
+      created: boolean;
+      columns: string[];
+    };
+    assert.equal(second.created, false, "the same name reuses the same sheet");
+    assert.deepEqual(second.columns, ["Tanggal", "Kategori", "Jumlah", "Cabang"], "a new field becomes a new column");
+    assert.equal(fake.sheets.length, 1);
+
+    await runTool({ user: u }, "sheet_append", { sheet: "Pengeluaran", fields: { Kategori: "=SUM(A1:A9)", Jumlah: -500 } });
+    const read = JSON.parse(String((await runTool({ user: u }, "sheet_read", { sheet: "pengeluaran" })).content)) as {
+      total_rows: number;
+      rows: Record<string, string | number>[];
+    };
+    assert.equal(read.total_rows, 3);
+    assert.deepEqual(read.rows[0], { Tanggal: read.rows[0]!.Tanggal, Kategori: "bahan baku", Jumlah: 2000000, Cabang: "" });
+    assert.equal(read.rows[1]!.Cabang, "Kemang");
+    assert.equal(read.rows[2]!.Kategori, "'=SUM(A1:A9)", "a cell that would become a formula is quoted");
+    assert.equal(read.rows[2]!.Jumlah, -500, "negative amounts are still numbers");
+    assert.match(String(read.rows[0]!.Tanggal), /\d{1,2} September 2026/);
+
+    const list = JSON.parse(String((await runTool({ user: u }, "sheet_read", {})).content)) as { sheet: string }[];
+    assert.deepEqual(list.map((s) => s.sheet), ["Pengeluaran"]);
+    assert.match(String((await runTool({ user: u }, "sheet_read", { sheet: "Omzet" })).content), /Belum ada catatan bernama "Omzet"/);
+    assert.equal((await runTool({ user: u }, "sheet_append", { sheet: "Omzet", fields: {} })).isError, true);
   });
 
   test("contacts: a name the user never saved is found in their Google contacts and kept", async () => {

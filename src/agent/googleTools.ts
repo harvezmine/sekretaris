@@ -20,7 +20,9 @@ import {
   type GoogleService,
 } from "../google/client.js";
 import { CONNECT_MINUTES, connectUrlFor } from "../google/connect.js";
+import { createDoc } from "../google/docs.js";
 import { DriveUnsupportedError, importDriveFile, saveToDrive, searchDrive } from "../google/drive.js";
+import { appendRow, listSheets, readRows } from "../google/sheets.js";
 import { mailAttachment, readMail, replySubject, searchMail, senderName } from "../google/gmail.js";
 import { bareAddress, validAddress } from "../google/mime.js";
 import { formatDateTime, isoInZone } from "../util.js";
@@ -192,6 +194,57 @@ const DEFS: Record<string, { service: GoogleService | "any"; def: BetaTool }> = 
       },
     },
   },
+  doc_create: {
+    service: "drive",
+    def: {
+      name: "doc_create",
+      description: [
+        "Write a Google Docs document for the user and return its link: meeting notes, a draft letter or offer, a summary they want to keep or edit on a computer. Use it when they ask for a document, or when the answer is long enough that a document beats a chat message.",
+        "Write the body the way you write in chat: \"# \" for a heading, \"- \" for bullets, \"1. \" for numbers, a blank line between paragraphs, *bold* and _italic_. Do not paste the whole document back into the reply: say what it is and give the link.",
+      ].join("\n\n"),
+      input_schema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "The document title, in the user's language." },
+          body: { type: "string", description: "The content, up to about 20000 characters." },
+        },
+        required: ["title", "body"],
+      },
+    },
+  },
+  sheet_append: {
+    service: "drive",
+    def: {
+      name: "sheet_append",
+      description: [
+        "Add one row to one of the user's Google Sheets notebooks, creating the sheet the first time. This is how anything the user wants to keep track of over time is recorded: sales, expenses, orders, attendance, stock.",
+        'Use a short, stable sheet name per topic ("Pengeluaran", "Omzet"), and reuse the exact same name next time. Give the columns as fields, e.g. {"Kategori": "bahan baku", "Jumlah": 2000000, "Catatan": "cabang Kemang"}; amounts go in as plain numbers, without "Rp" or dots. A date column is added for you. New fields become new columns, so keep the names consistent.',
+      ].join("\n\n"),
+      input_schema: {
+        type: "object",
+        properties: {
+          sheet: { type: "string", description: "Notebook name, e.g. Pengeluaran." },
+          fields: { type: "object", description: "Column name to value. Numbers as numbers." },
+        },
+        required: ["sheet", "fields"],
+      },
+    },
+  },
+  sheet_read: {
+    service: "drive",
+    def: {
+      name: "sheet_read",
+      description:
+        "Read the most recent rows of one of the user's notebooks so you can total, compare or summarise them. Omit sheet to list the notebooks that exist.",
+      input_schema: {
+        type: "object",
+        properties: {
+          sheet: { type: "string" },
+          limit: { type: "integer", description: "How many recent rows, 1-100. Default 20." },
+        },
+      },
+    },
+  },
 };
 
 /** Static for a given configuration, so every user with Google sees the same bytes. */
@@ -239,6 +292,12 @@ export const googleInputs = {
   drive_search: z.object({ query: z.string().max(200), max: z.coerce.number().int().optional() }),
   drive_read: z.object({ file_id: z.string().min(1).max(200) }),
   drive_save: z.object({ capture_id: z.coerce.number().int().positive(), name: z.string().min(1).max(200).optional() }),
+  doc_create: z.object({ title: z.string().min(1).max(200), body: z.string().min(1).max(20_000) }),
+  sheet_append: z.object({
+    sheet: z.string().min(1).max(100),
+    fields: z.record(z.string().max(40), z.union([z.string().max(500), z.number()])),
+  }),
+  sheet_read: z.object({ sheet: z.string().max(100).optional(), limit: z.coerce.number().int().optional() }),
 } as const;
 
 type GoogleToolName = keyof typeof googleInputs;
@@ -512,6 +571,45 @@ export const googleHandlers: {
       if (!capture) return fail(`Tidak ada file #${capture_id}.`);
       const file = await saveToDrive(user.id, capture, name);
       return ok({ saved: file.name, folder: "Milo", ...(file.webViewLink ? { link: file.webViewLink } : {}) });
+    });
+  },
+
+  async doc_create({ user }, { title, body }) {
+    return guard(async () => {
+      const file = await createDoc(user.id, title, body);
+      return ok({ created: file.name, folder: "Milo", ...(file.webViewLink ? { link: file.webViewLink } : {}) });
+    });
+  },
+
+  async sheet_append({ user }, { sheet, fields }) {
+    return guard(async () => {
+      if (!Object.keys(fields).length) return fail("Sebutkan minimal satu kolom dan isinya.");
+      const result = await appendRow(user.id, sheet, fields, { timeZone: user.timezone });
+      return ok({
+        sheet: result.sheet.name,
+        created: result.created,
+        columns: result.header,
+        added: result.row,
+        ...(result.sheet.link ? { link: result.sheet.link } : {}),
+      });
+    });
+  },
+
+  async sheet_read({ user }, { sheet, limit }) {
+    return guard(async () => {
+      if (!sheet) {
+        const sheets = await listSheets(user.id);
+        if (!sheets.length) return ok("Belum ada catatan. Buat yang pertama dengan sheet_append.");
+        return ok(sheets.map((s) => ({ sheet: s.name, ...(s.link ? { link: s.link } : {}) })));
+      }
+      const found = await readRows(user.id, sheet, limit ?? 20);
+      if (!found) return ok(`Belum ada catatan bernama "${sheet}".`);
+      return ok({
+        sheet: found.sheet.name,
+        total_rows: found.total,
+        rows: found.rows,
+        ...(found.sheet.link ? { link: found.sheet.link } : {}),
+      });
     });
   },
 };

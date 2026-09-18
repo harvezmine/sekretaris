@@ -1,7 +1,8 @@
+import { ACTION_MINUTES, type PendingAction } from "../actions/pending.js";
 import { config } from "../config.js";
 import { sql, type UserRow } from "../db/index.js";
 import { clip, redact } from "./checks.js";
-import { ServerSetupError } from "./keys.js";
+import { ServerSetupError, type AddressPolicy } from "./keys.js";
 import { isServerAdmin } from "./registry.js";
 import { sshExec } from "./ssh.js";
 import { resolveServer } from "./userServers.js";
@@ -131,6 +132,34 @@ export async function removeAction(user: UserRow, serverName: string, actionName
   return true;
 }
 
+export type ServerCommand =
+  | { kind: "save"; server: string; name: string; command: string }
+  | { kind: "run"; server: string; command: string }
+  | { kind: "list"; server?: string }
+  | { kind: "forget"; server: string; name: string };
+
+const SAVE = /^aksi\s+([a-z0-9][a-z0-9-]{0,39})\s+([a-z0-9][a-z0-9-]{0,29})\s*[:=]\s*([\s\S]+)$/i;
+const FORGET = /^(?:hapus|lupakan)\s+aksi\s+([a-z0-9][a-z0-9-]{0,39})\s+([a-z0-9][a-z0-9-]{0,29})\s*$/i;
+const LIST = /^aksi(?:\s+([a-z0-9][a-z0-9-]{0,39}))?\s*$/i;
+const RUN = /^(?:jalankan|jalanin|run|eksekusi)\s+(?:di\s+)?([a-z0-9][a-z0-9-]{0,39})\s*[:=]\s*([\s\S]+)$/i;
+
+/**
+ * Commands the pipeline answers by itself. The point is authorship: a command only ever reaches a server because
+ * the user typed it here, so nothing the model reads — an email, a document, a stranger's reply — can put one there.
+ */
+export function parseServerCommand(text: string): ServerCommand | undefined {
+  const t = text.trim();
+  const forget = FORGET.exec(t);
+  if (forget) return { kind: "forget", server: forget[1]!.toLowerCase(), name: forget[2]!.toLowerCase() };
+  const save = SAVE.exec(t);
+  if (save) return { kind: "save", server: save[1]!.toLowerCase(), name: save[2]!.toLowerCase(), command: save[3]! };
+  const run = RUN.exec(t);
+  if (run) return { kind: "run", server: run[1]!.toLowerCase(), command: run[2]! };
+  const list = LIST.exec(t);
+  if (list) return list[1] ? { kind: "list", server: list[1].toLowerCase() } : { kind: "list" };
+  return undefined;
+}
+
 export interface RunOutcome {
   ok: boolean;
   exitCode: number | null;
@@ -144,13 +173,13 @@ export interface RunOutcome {
  * Runs one command over SSH and records it, whatever happens. Output is redacted and clipped: a deploy log is
  * long, and a WhatsApp message is not the place to paste a secret that scrolled past.
  */
-export async function runServerCommand(user: UserRow, payload: ServerRunPayload): Promise<RunOutcome> {
+export async function runServerCommand(user: UserRow, payload: ServerRunPayload, policy?: AddressPolicy): Promise<RunOutcome> {
   const [{ n } = { n: "0" }] = await sql<{ n: string }[]>`
     select count(*) as n from server_runs where user_id = ${user.id} and created_at > now() - interval '1 hour'
   `;
   if (Number(n) >= RUNS_PER_HOUR) throw new ServerActionError(`Batas ${RUNS_PER_HOUR} perintah per jam tercapai. Coba lagi nanti.`);
 
-  const resolved = await resolveServer(user, payload.server);
+  const resolved = await resolveServer(user, payload.server, policy);
   if (!resolved) throw new ServerActionError(`Server "${payload.server}" tidak ditemukan.`);
   if (resolved.target.kind !== "ssh") throw new ServerActionError(`Server "${payload.server}" bukan server SSH, jadi tidak bisa menjalankan perintah.`);
 
@@ -188,3 +217,49 @@ export async function runServerCommand(user: UserRow, payload: ServerRunPayload)
 }
 
 export { DEFAULT_TIMEOUT_SEC, MAX_TIMEOUT_SEC, RUNS_PER_HOUR, ServerSetupError };
+
+/** What the user reads before deciding: the server, the command itself, and how long it may take. */
+export function serverActionPreview(action: PendingAction): string {
+  const p = action.payload as unknown as ServerRunPayload;
+  return [
+    p.action ? `🖥️ *Jalankan "${p.action}" di ${p.server}?*` : `🖥️ *Jalankan perintah ini di ${p.server}?*`,
+    "",
+    "```",
+    p.command,
+    "```",
+  ].join("\n");
+}
+
+export function serverActionQuestion(action: PendingAction): string {
+  const p = action.payload as unknown as ServerRunPayload;
+  return `Jalankan sekarang di *${p.server}*? Batas waktu ${Math.round(p.timeoutSec / 60)} menit, konfirmasi berlaku ${ACTION_MINUTES} menit.`;
+}
+
+export interface ServerActionOutcome {
+  ok: boolean;
+  text: string;
+  note: string;
+}
+
+/** Runs a confirmed action and turns the result into something readable in a chat. */
+export async function runServerAction(action: PendingAction, user: UserRow): Promise<ServerActionOutcome> {
+  const p = action.payload as unknown as ServerRunPayload;
+  const what = p.action ? `"${p.action}"` : "perintah";
+  try {
+    const outcome = await runServerCommand(user, p);
+    const seconds = Math.max(1, Math.round(outcome.durationMs / 1000));
+    const head = outcome.ok
+      ? `✅ ${p.action ? `*${p.action}*` : "Perintah"} selesai di *${p.server}* (${seconds} detik).`
+      : `❌ ${p.action ? `*${p.action}*` : "Perintah"} gagal di *${p.server}*${outcome.exitCode === null ? "" : ` (exit ${outcome.exitCode})`}.`;
+    const body = outcome.error ?? outcome.output;
+    const text = body ? `${head}\n\n\`\`\`\n${body}\n\`\`\`` : `${head} Tidak ada keluaran.`;
+    return {
+      ok: outcome.ok,
+      text,
+      note: `[Pengguna menekan Jalankan: ${what} di ${p.server} ${outcome.ok ? "berhasil" : "gagal"}${outcome.error ? `: ${outcome.error}` : ""}]`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, text: `❌ Tidak bisa menjalankan ${what} di *${p.server}*: ${message}`, note: `[Jalankan ${what} di ${p.server} gagal: ${message}]` };
+  }
+}
