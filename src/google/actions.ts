@@ -55,7 +55,7 @@ export function actionPreview(action: GoogleAction, user: UserRow): string {
       const when = eventTime({ start: new Date(p.start), end: new Date(p.end), allDay: p.allDay }, tz, true);
       return [
         "🗑️ *Hapus acara ini dari kalender?*",
-        `*${p.title}* — ${when}`,
+        `*${p.title}*, ${when}`,
         ...(p.attendees ? [`${p.attendees} tamu akan diberi tahu bahwa acara dibatalkan.`] : []),
       ].join("\n");
     }
@@ -71,7 +71,7 @@ export async function actionQuestion(action: GoogleAction, user: UserRow): Promi
       : action.kind === "calendar_invite"
         ? "Buat acara ini dan kirim undangannya?"
         : "Hapus acara ini?";
-  return `${ask} Konfirmasi berlaku ${ACTION_MINUTES} menit.`;
+  return `${ask} Saya tunggu jawaban Anda ${ACTION_MINUTES} menit.`;
 }
 
 export interface ActionOutcome {
@@ -88,7 +88,7 @@ export async function runAction(action: GoogleAction, user: UserRow): Promise<Ac
       case "gmail_send": {
         const p = action.payload as unknown as MailPayload;
         await sendMail(user.id, p);
-        return { ok: true, text: `✅ Email "${p.subject}" terkirim ke ${p.to.join(", ")}.`, note: `[Pengguna menekan Kirim: email "${p.subject}" terkirim]` };
+        return { ok: true, text: `✅ Email "${p.subject}" terkirim ke ${p.to.join(", ")}.`, note: `[Pengguna menyetujui: email "${p.subject}" terkirim]` };
       }
       case "calendar_invite": {
         const p = action.payload as unknown as NewEvent;
@@ -96,13 +96,13 @@ export async function runAction(action: GoogleAction, user: UserRow): Promise<Ac
         return {
           ok: true,
           text: `✅ Acara dibuat dan undangan terkirim:\n${eventLine(event, user.timezone, true)}${event.meetLink ? `\nMeet: ${event.meetLink}` : ""}`,
-          note: `[Pengguna menekan Kirim undangan: acara "${p.title}" dibuat, id ${event.id}]`,
+          note: `[Pengguna menyetujui undangannya: acara "${p.title}" dibuat, id ${event.id}]`,
         };
       }
       case "calendar_delete": {
         const p = action.payload as unknown as DeletePayload;
         await deleteEvent(user.id, p.eventId, p.attendees > 0);
-        return { ok: true, text: `🗑️ Acara *${p.title}* sudah dihapus dari kalender.`, note: `[Pengguna menekan Hapus: acara "${p.title}" dihapus]` };
+        return { ok: true, text: `🗑️ Acara *${p.title}* sudah dihapus dari kalender.`, note: `[Pengguna menyetujui: acara "${p.title}" dihapus]` };
       }
     }
   } catch (err) {
@@ -116,6 +116,6 @@ export async function runAction(action: GoogleAction, user: UserRow): Promise<Ac
             : err instanceof Error
               ? err.message
               : String(err);
-    return { ok: false, text: `❌ Gagal: ${reason}.`, note: `[Pengguna menekan konfirmasi, tapi gagal: ${reason}]` };
+    return { ok: false, text: `❌ Gagal: ${reason}.`, note: `[Pengguna menyetujui, tapi gagal: ${reason}]` };
   }
 }

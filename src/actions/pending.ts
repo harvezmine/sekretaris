@@ -81,7 +81,7 @@ const YES_LABEL: Record<ActionKind, string> = {
 export function actionButtons(action: Pick<PendingAction, "id" | "kind">): Button[] {
   const yes = YES_LABEL[action.kind] ?? "Kirim";
   return [
-    { id: `act_yes:${action.id}`, title: yes },
-    { id: `act_no:${action.id}`, title: "Batal" },
+    { id: `act_yes:${action.id}`, title: yes, answer: "yes" },
+    { id: `act_no:${action.id}`, title: "Batal", say: ["batalkan", "jangan"], answer: "no" },
   ];
 }

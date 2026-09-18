@@ -5,7 +5,7 @@ import { InstanPayProvider, instanPaySignature } from "../src/payments/instanpay
 import { paymentCaption, type PaymentRow } from "../src/payments/service.ts";
 import { WhatsAppError } from "../src/wa/client.ts";
 import { FonnteClient, fonnteFieldsPresent, parseFonnteWebhook, parsePoint, parseVCards } from "../src/wa/fonnte.ts";
-import { matchMenuReply, renderMenu } from "../src/wa/menu.ts";
+import { matchMenuReply, renderChoices } from "../src/wa/menu.ts";
 
 type Call = { url: string; init: RequestInit };
 
@@ -25,23 +25,39 @@ const json = (body: unknown, status = 200) => () =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const buttons = [
-  { id: "code", title: "Punya Kode" },
-  { id: "price", title: "Lihat Harga" },
-  { id: "faq", title: "Tanya Dulu" },
+  { id: "code", title: "Punya Kode", say: ["kode", "ada kode"] },
+  { id: "price", title: "Lihat Harga", say: ["harga"] },
+  { id: "faq", title: "Tanya Dulu", say: ["tanya"] },
 ];
 
-test("menus render as numbered text and replies map back to buttons", () => {
-  const text = renderMenu("Pilih:", buttons);
-  assert.equal(text, "Pilih:\n\nBalas dengan angka:\n*1.* Punya Kode\n*2.* Lihat Harga\n*3.* Tanya Dulu");
-  assert.equal(matchMenuReply("2", buttons)?.id, "price");
-  assert.equal(matchMenuReply(" (3) ", buttons)?.id, "faq");
-  assert.equal(matchMenuReply("1.", buttons)?.id, "code");
+test("a question keeps its own words, and an answer in those words is understood", () => {
+  // The choices are named in the question itself, so nothing is appended and nobody is asked to reply with a number.
   assert.equal(matchMenuReply("lihat harga", buttons)?.id, "price");
+  assert.equal(matchMenuReply("harganya", buttons)?.id, "price", "a word from inside the choice is enough");
+  assert.equal(matchMenuReply("Punya Kode", buttons)?.id, "code");
+  assert.equal(matchMenuReply("ada kode", buttons)?.id, "code");
+  assert.equal(matchMenuReply("mau tanya dulu deh", buttons)?.id, "faq", "a couple of words around the choice still counts");
+  assert.equal(matchMenuReply("nanti saya tanya dulu soal harganya ya", buttons), undefined, "a whole sentence is for the model");
   assert.equal(matchMenuReply("4", buttons), undefined);
   assert.equal(matchMenuReply("2 orang", buttons), undefined);
+
+  const confirm = [
+    { id: "send", title: "Kirim", answer: "yes" as const },
+    { id: "cancel", title: "Batal", say: ["jangan"], answer: "no" as const },
+  ];
+  for (const yes of ["ya", "iya", "oke", "boleh", "silakan", "kirim", "Kirim aja"]) {
+    assert.equal(matchMenuReply(yes, confirm)?.id, "send", yes);
+  }
+  for (const no of ["jangan", "batal", "gak usah", "nanti", "tidak"]) assert.equal(matchMenuReply(no, confirm)?.id, "cancel", no);
+  assert.equal(matchMenuReply("1", confirm), undefined, "a stray number never sends anything");
+  assert.equal(matchMenuReply("ubah dulu, rapatnya jam 4", confirm), undefined, "anything else is a message to the assistant");
+
+  const rows = [{ id: "qa:agenda", title: "📅 Agenda hari ini", description: "Pengingat hari ini dan besok" }];
+  assert.equal(renderChoices("Yang biasa saya bantu:", rows), "Yang biasa saya bantu:\n• 📅 Agenda hari ini: Pengingat hari ini dan besok");
+  assert.equal(matchMenuReply("agenda", rows)?.id, "qa:agenda");
 });
 
-test("Fonnte sends form data with the device token and numbered menus", async () => {
+test("Fonnte sends form data with the device token, and a menu as plain lines", async () => {
   const { http, calls } = fakeFetch([
     json({ status: true, id: ["801"], detail: "success! message in queue" }),
     json({ status: true, id: ["802"] }),
@@ -57,8 +73,12 @@ test("Fonnte sends form data with the device token and numbered menus", async ()
   assert.equal(form.get("countryCode"), "0");
   assert.equal(form.get("typing"), "true");
 
-  await wa.sendButtons("6281234", "Pilih:", buttons);
-  assert.match(String((calls[1]!.init.body as FormData).get("message")), /\*2\.\* Lihat Harga/);
+  await wa.sendButtons("6281234", "Punya kode undangan, mau lihat harganya dulu, atau ada yang mau ditanyakan?", buttons);
+  assert.equal(
+    String((calls[1]!.init.body as FormData).get("message")),
+    "Punya kode undangan, mau lihat harganya dulu, atau ada yang mau ditanyakan?",
+    "the question goes out as written, with no options bolted underneath",
+  );
   assert.equal(wa.supportsButtons, false);
   assert.equal(wa.serviceWindow, false);
 });

@@ -426,12 +426,12 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     for (const answer of ["lewati", "lewati"]) await say(u, answer);
     const step = last(u);
     assert.equal(step.type, "text", "the last question is asked in words, not as a list to tap");
-    assert.match(step.text!, /sambungkan ke Google Anda \(kalender, email, Drive, kontak\)/);
+    assert.match(step.text!, /Kalau kalender dan email Anda ada di Google, saya bisa ikut mengurusnya/);
 
     await say(u, "boleh");
     const [linkMsg, done] = out(u).slice(-2);
     assert.match(linkMsg!.text!, /^🔗 \*Hubungkan Google Kalender, Gmail, Google Drive, Google Kontak\*\nhttps:\/\/milo\.example\.com\/connect\//);
-    assert.match(done!.text!, /Ada yang bisa saya bantu/);
+    assert.match(done!.text!, /Sekarang, mau mulai dari apa\?/);
     assert.equal((await byWa(u)).state, "READY");
 
     const link = new URL(/https:\/\/\S+/.exec(linkMsg!.text!)![0]);
@@ -462,7 +462,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.equal(callback.statusCode, 200);
     assert.match(callback.body, /Google terhubung sebagai josh@gmail\.com/);
     const confirmed = last(u).text!;
-    assert.match(confirmed, /^✅ Google terhubung \(josh@gmail\.com\): Google Kalender, Gmail, Google Drive, Google Kontak\./);
+    assert.match(confirmed, /^Google Anda sudah tersambung \(josh@gmail\.com\), untuk Google Kalender, Gmail, Google Drive, Google Kontak\./);
     assert.match(confirmed, /agenda saya minggu ini apa\?/);
     const [account] = await sql<{ email: string; refreshTokenEnc: string; scopes: string[] }[]>`
       select email, refresh_token_enc, scopes from google_accounts ga join users u on u.id = ga.user_id where u.wa_id = ${u}
@@ -479,7 +479,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     await say(u, "koneksi");
     const connections = last(u);
-    assert.match(connections.text!, /Google: ✅ josh@gmail\.com — Google Kalender, Gmail, Google Drive, Google Kontak\./);
+    assert.match(connections.text!, /Google: ✅ josh@gmail\.com, untuk Google Kalender, Gmail, Google Drive, Google Kontak\./);
     assert.deepEqual(connections.buttons!.map((b) => b.id), ["conn:google:disconnect"]);
   });
 
@@ -521,8 +521,8 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     await say(u.waId, "agenda");
     const agenda = last(u.waId).text!;
-    assert.match(agenda, /• 📅 sepanjang hari — Cuti bersama\n• 📅 10\.00–11\.00 — Rapat vendor \(Meet, 2 tamu\)[^\n]*\n• ⏰ 16\.00 — Bayar listrik/);
-    assert.match(agenda, /\*Besok:\* 1 agenda, pertama 09\.00–10\.00 — Presentasi investor/);
+    assert.match(agenda, /• 📅 sepanjang hari Cuti bersama\n• 📅 10\.00–11\.00 Rapat vendor \(Meet, 2 tamu\)[^\n]*\n• ⏰ 16\.00 Bayar listrik/);
+    assert.match(agenda, /\*Besok:\* 1 agenda, pertama 09\.00–10\.00 Presentasi investor/);
     assert.match(agenda, /Dari Google Kalender dan pengingat Anda/);
 
     const slots = JSON.parse(
@@ -532,7 +532,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.match(slots[0]!, /08\.00–10\.00$/);
 
     const created = await runTool({ user: u }, "calendar_create", { title: "Fokus kerja", start: `${d}T14:00:00+07:00`, duration_minutes: 30 });
-    assert.match(String(created.content), /14\.00–14\.30 — Fokus kerja/);
+    assert.match(String(created.content), /14\.00–14\.30 Fokus kerja/);
     assert.equal(fake.callsTo("/events", "POST").at(-1)!.url.searchParams.get("sendUpdates"), "none");
 
     const bad = await runTool({ user: u }, "calendar_create", { title: "x", start: `${d}T14:00:00+07:00`, attendees: ["bukan-email"] });
@@ -559,7 +559,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     await say(u.waId, 'tool calendar_delete {"event_id":"ev-vendor"}');
     const [, deletePreview, deleteQuestion] = out(u.waId).slice(-3);
-    assert.match(deletePreview!.text!, /Hapus acara ini dari kalender\?\*\n\*Rapat vendor\* — .+10\.00–11\.00\n2 tamu akan diberi tahu/);
+    assert.match(deletePreview!.text!, /Hapus acara ini dari kalender\?\*\n\*Rapat vendor\*, .+10\.00–11\.00\n2 tamu akan diberi tahu/);
     assert.deepEqual(deleteQuestion!.buttons!.map((b) => b.title), ["Hapus", "Batal"]);
     await tap(u.waId, deleteQuestion!.buttons![1]!.id);
     assert.equal(last(u.waId).text, "Oke, dibatalkan.");
@@ -636,7 +636,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
       preview!.text,
       "📧 *Balasan email siap dikirim* (ke Andi Pratama)\nKepada: Andi Pratama <andi@vendor.co>\nSubjek: Re: Invoice September\n\nHalo Andi,\n\nInvoice sudah kami terima, pembayaran Jumat.\n\nSalam,\nJosh",
     );
-    assert.match(question!.text!, /^Kirim email di atas dari josh@gmail\.com\? Konfirmasi berlaku 15 menit\./);
+    assert.equal(question!.text, "Kirim email di atas dari josh@gmail.com? Saya tunggu jawaban Anda 15 menit.");
     assert.equal(fake.sent.length, 0);
 
     await tap(u.waId, question!.buttons![0]!.id);
@@ -790,7 +790,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.equal(found.from, "Google Kontak");
     assert.deepEqual(
       found.contacts.map((c) => [c.name, c.phone, c.organization]),
-      [["Andi Prasetyo", "6281233334444", "Vendor Jaya — Project Manager"]],
+      [["Andi Prasetyo", "6281233334444", "Vendor Jaya, Project Manager"]],
       "a contact with no way to reach them is not offered",
     );
     assert.equal(fake.warmups, 1, "Google's contact search is warmed up first");

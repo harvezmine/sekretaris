@@ -53,7 +53,7 @@ function timeIn(date: Date, timeZone: string): string {
 
 export function paymentCaption(payment: PaymentRow, timeZone: string, sandbox: boolean): string {
   const pay = payment.payAmountIdr ?? payment.amountIdr;
-  const lines = [`*${PLAN_LABEL[payment.plan]} — ${payment.months} bulan*`];
+  const lines = [`*${PLAN_LABEL[payment.plan]}, ${payment.months} bulan*`];
   if (pay !== payment.amountIdr) {
     lines.push(
       `Bayar *tepat ${formatIdr(pay)}*`,
@@ -67,7 +67,7 @@ export function paymentCaption(payment: PaymentRow, timeZone: string, sandbox: b
   if (payment.paymentUrl) lines.push(payment.paymentUrl);
   lines.push("", `Berlaku sampai ${formatDate(payment.expiresAt, timeZone)} pukul ${timeIn(payment.expiresAt, timeZone)}.`);
   if (payment.provider === "bypass") lines.push("", "_[MODE UJI] QR ini tidak bisa dibayar; pembayaran dikonfirmasi otomatis._");
-  else if (sandbox) lines.push("", "_[SANDBOX] Pembayaran uji — tidak ada uang sungguhan._");
+  else if (sandbox) lines.push("", "_[SANDBOX] Pembayaran uji, tidak ada uang sungguhan._");
   return lines.join("\n");
 }
 

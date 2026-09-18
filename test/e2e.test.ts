@@ -163,7 +163,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, "MENU")]);
     assert.deepEqual(lastOut(u)!.buttons!.map((b) => b.id), ["code", "price", "faq"], "the menu is still there when asked for by name");
     await send(u, [button(u, "price")]);
-    assert.match(outFor(u).at(-2)!.text!, /Profesional\* — Rp500\.000\/bulan/);
+    assert.match(outFor(u).at(-2)!.text!, /Profesional\*: Rp500\.000\/bulan/);
     await send(u, [button(u, "faq")]);
     assert.match(outFor(u).at(-2)!.text!, /Pertanyaan yang sering muncul/);
     assert.equal(agentCalls.length, 0, "the full assistant never runs before activation");
@@ -174,7 +174,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     const [code] = await createCodes({ kind: "trial", count: 1, maxUses: 1, trialDays: 14, expiresInDays: 30, source: "uji" });
     await send(u, [text(u, "halo")]);
     await send(u, [button(u, "code")]);
-    assert.equal(lastOut(u)!.text, "Boleh, ketik kode undangannya di sini.");
+    assert.equal(lastOut(u)!.text, "Boleh, ketik kodenya di sini.");
 
     await send(u, [text(u, "SALAH-KODE")]);
     assert.match(lastOut(u)!.text!, /Kodenya belum cocok/);
@@ -185,7 +185,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal(user.status, "trialing");
     assert.equal(user.state, "SETUP", "a new trial starts with getting to know the user");
     const [started, firstQuestion] = outFor(u).slice(-2);
-    assert.match(started!.text!, /Masa coba \*14 hari\* aktif/);
+    assert.match(started!.text!, /Kodenya cocok\. Mulai sekarang saya jadi sekretaris Anda, gratis \*14 hari\*/);
     assert.match(firstQuestion!.text!, /saya panggil Anda apa\?/i);
     const nudges = await sql`select fire_at from reminders where user_id = ${user.id} and kind = 'trial_nudge'`;
     assert.equal(nudges.length, 1);
@@ -207,7 +207,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [button(u, "subscribe")]);
     const out = outFor(u);
     const image = out.find((e) => e.type === "image")!;
-    assert.match(image.text!, /Profesional — 1 bulan/);
+    assert.match(image.text!, /Profesional, 1 bulan/);
     assert.match(image.text!, /Rp500\.000/);
     assert.match(image.text!, /MODE UJI/);
     assert.deepEqual(out.at(-1)!.buttons!.map((b) => b.id), ["resend_qr", "cancel_pay"]);
@@ -220,7 +220,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal(user.state, "SETUP", "a new subscriber gets the same getting-to-know-you as a trial");
     const days = (user.periodEndsAt!.getTime() - Date.now()) / 86_400_000;
     assert.ok(days > 27 && days < 32, `period ~1 month, got ${days}`);
-    assert.ok(outFor(u).some((e) => /Pembayaran diterima\. \*Profesional\* aktif/.test(e.text ?? "")));
+    assert.ok(outFor(u).some((e) => /Pembayarannya sudah masuk.+\*Profesional\* Anda aktif/.test(e.text ?? "")));
 
     const [payment] = await sql<{ providerRef: string; status: string }[]>`select provider_ref, status from payments where user_id = ${user.id}`;
     assert.equal(payment!.status, "paid");
@@ -231,7 +231,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     const u = "6281100000005";
     const [code] = await createCodes({ kind: "pendiri", count: 1, maxUses: 1 });
     await send(u, [text(u, code!.code)]);
-    assert.ok(outFor(u).some((e) => /Harga Pendiri\* diterima/.test(e.text ?? "")));
+    assert.ok(outFor(u).some((e) => /Harga Pendiri\* cocok/.test(e.text ?? "")));
     await waitFor(async () => (await userByWa(u))!.status === "active");
     await waitFor(async () => (await userByWa(u))!.state === "SETUP");
     await send(u, [text(u, "selesai")]);
@@ -367,8 +367,8 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     const menu = lastOut(u)!.text!;
     assert.match(menu, /Atur nama & gaya asisten Anda/);
     assert.match(menu, /Sekarang: \*Milo\*, gaya \*standar\*/);
-    assert.match(menu, /\n4\. \*Anime Hero\*/);
-    assert.match(menu, /\n11\. \*Anime Kawaii\*/);
+    assert.match(menu, /\n• \*Anime Hero\*/);
+    assert.match(menu, /\n• \*Anime Kawaii\*/);
     const user = (await userByWa(u))!;
     const transcript = await sql<{ role: string; content: string }[]>`
       select t.role, t.content::text as content from transcript t join sessions s on s.id = t.session_id
@@ -396,16 +396,16 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     let q = lastOut(u)!;
     assert.equal(q.type, "text", "nothing to tap, nothing numbered");
     assert.match(q.text!, /saya panggil Anda apa\?/i);
-    assert.match(q.text!, /Josh juga boleh/, "their WhatsApp name is offered, not imposed");
+    assert.match(q.text!, /Josh saja, atau ada panggilan lain\?/, "their WhatsApp name is offered, not imposed");
 
     await send(u, [text(u, "Pak Josh")]);
-    assert.match(lastOut(u)!.text!, /kerja apa\?/);
+    assert.match(lastOut(u)!.text!, /sibuk di bidang apa\?/);
     Object.assign(config, { GOOGLE_CLIENT_ID: "cid.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "rahasia" });
     try {
       await send(u, [text(u, "punya 3 cabang kedai kopi")]);
       q = lastOut(u)!;
       assert.equal(q.type, "text");
-      assert.match(q.text!, /sambungkan ke Google/);
+      assert.match(q.text!, /Mau saya sambungkan sekarang, atau nanti saja\?/);
     } finally {
       Object.assign(config, { GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" });
     }
@@ -413,8 +413,8 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, "nanti saja")]);
     const done = lastOut(u)!;
     assert.equal(done.type, "text", "no menu is pushed at the end");
-    assert.match(done.text!, /^Siap, Pak Josh\. Mulai sekarang, tiap pagi saya kabari agenda hari itu/);
-    assert.match(done.text!, /Kalau ada yang tidak perlu, bilang saja\.\n\nAda yang bisa saya bantu sekarang\?$/, "the check-ins are announced once, with the way out");
+    assert.match(done.text!, /^Siap, Pak Josh\. Tiap pagi saya kabari agenda hari itu/);
+    assert.match(done.text!, /Kalau ada yang tidak perlu, bilang saja\.\n\nSekarang, mau mulai dari apa\?$/, "the check-ins are announced once, with the way out");
 
     const user = (await userByWa(u))!;
     assert.equal(user.state, "READY");
@@ -430,10 +430,10 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     agentCalls.length = 0;
 
     await send(u, [text(u, "lewati")]);
-    assert.match(lastOut(u)!.text!, /kerja apa\?/);
+    assert.match(lastOut(u)!.text!, /sibuk di bidang apa\?/);
     await send(u, [text(u, "ingetin besok jam 9 rapat vendor")]);
     assert.deepEqual(agentCalls.map((c) => c.text), ["ingetin besok jam 9 rapat vendor"]);
-    assert.ok(outFor(u).some((e) => /kenalannya nanti saja/.test(e.text ?? "")));
+    assert.ok(outFor(u).some((e) => /kenalannya kita lanjutkan nanti saja/.test(e.text ?? "")));
     let user = (await userByWa(u))!;
     assert.equal(user.state, "READY");
     assert.equal(user.profile.setupDoneAt, undefined);
@@ -475,7 +475,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, "MENU")]);
     const menu = lastOut(u)!;
     assert.equal(menu.type, "list");
-    assert.match(menu.text!, /^Hai Pak Budi\. Mau dibantu apa\?/);
+    assert.equal(menu.text, "Hai Pak Budi. Yang biasa saya bantu, sebut saja mana yang Anda perlukan:", "the rows are the list; nothing is numbered");
     assert.deepEqual(
       menu.buttons!.map((b) => b.id),
       ["qa:agenda", "qa:reminder", "qa:file", "qa:message", "qa:style", "qa:profile", "qa:help", "qa:account"],
@@ -484,9 +484,9 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [button(u, "qa:agenda")]);
     const agenda = lastOut(u)!.text!;
     assert.match(agenda, /📅 \*Agenda hari ini\*/);
-    assert.match(agenda, /• 23\.59 — Rapat vendor/);
+    assert.match(agenda, /• 23\.59 Rapat vendor/);
     assert.doesNotMatch(agenda, /Batal ini/);
-    assert.match(agenda, /\*Besok:\* 1 agenda, pertama jam 08\.00 — Bayar gaji/);
+    assert.match(agenda, /\*Besok:\* 1 agenda, pertama jam 08\.00 Bayar gaji/);
     await send(u, [text(u, "jadwal hari ini")]);
     assert.match(lastOut(u)!.text!, /Agenda hari ini/);
     await send(u, [button(u, "qa:reminder")]);

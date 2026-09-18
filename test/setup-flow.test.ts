@@ -7,7 +7,7 @@ import { isYes, keywordAction, looksLikeRequest, nextStep, quickRows, SETUP_ORDE
 import { localNow } from "../src/profile/agenda.ts";
 import { normalizeCallName, normalizeWork, parseClock, profilePromptLines } from "../src/profile/profile.ts";
 import { assertButtons, assertList } from "../src/wa/client.ts";
-import { matchMenuReply, renderMenu } from "../src/wa/menu.ts";
+import { matchMenuReply, renderChoices } from "../src/wa/menu.ts";
 
 const user = (patch: Partial<UserRow> = {}) => ({ id: "1", waId: "6281", displayName: "Josh", profile: {}, ...patch }) as UserRow;
 
@@ -65,7 +65,7 @@ describe("getting to know the user", () => {
     assert.equal(hello.split("\n").filter(Boolean).length, 3);
     assert.match(hello, /Halo Josh/);
     assert.match(hello, /kode undangan/);
-    assert.match(hello, /menyimpan nomor dan percakapan/);
+    assert.match(hello, /nomor dan isi percakapannya saya simpan/);
     for (const feature of [/Cek server/, /Google/, /pengingat/i, /kepribadian/i]) {
       assert.ok(!feature.test(hello), `perkenalan tidak menyebut ${feature}`);
     }
@@ -92,14 +92,16 @@ describe("getting to know the user", () => {
     assert.throws(() => assertList("x", "x", [{ id: "a", title: "judul yang terlalu panjang sekali" }]));
   });
 
-  test("numbered menus show descriptions and accept typed titles without emoji", () => {
+  test("the menu lists what it can do, and is answered by naming one, not by number", () => {
     const rows = quickRows(user());
-    assert.match(renderMenu("Menu", rows), /\*1\.\* 📅 Agenda hari ini — Pengingat hari ini dan besok/);
+    assert.match(renderChoices("Menu", rows), /^Menu\n• 📅 Agenda hari ini: Pengingat hari ini dan besok\n/);
+    assert.doesNotMatch(renderChoices("Menu", rows), /\*\d+\.\*|Balas dengan angka/);
     assert.equal(matchMenuReply("agenda hari ini", rows)?.id, "qa:agenda");
     assert.equal(matchMenuReply("  Profil Saya ", rows)?.id, "qa:profile");
-    assert.equal(matchMenuReply("8", rows)?.id, "qa:account");
+    assert.equal(matchMenuReply("kirim file", rows)?.id, "qa:file");
     assert.equal(matchMenuReply("9", rows), undefined);
     assert.equal(matchMenuReply("😀", rows), undefined);
+    assert.equal(matchMenuReply("agenda saya minggu depan gimana", rows), undefined, "a real question goes to the model");
   });
 
   test("the model sees the profile, including how to address the user", () => {

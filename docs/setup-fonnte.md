@@ -3,7 +3,7 @@
 Fonnte menghubungkan nomor WhatsApp biasa seperti WhatsApp Web. Ini **tidak resmi**:
 
 - nomornya bisa diblokir WhatsApp — pakai nomor cadangan, jangan nomor utama;
-- tidak ada tombol, jadi menu Milo tampil sebagai daftar bernomor ("balas 1, 2, atau 3");
+- tidak ada tombol, jadi pilihan ditanyakan di dalam kalimat dan dijawab dengan kata biasa ("kirim", "jangan");
 - sesi WhatsApp-nya dipegang Fonnte.
 
 Cocok untuk POC dan penguji yang paham. Untuk pelanggan berbayar, pindah ke jalur resmi (Cloud API atau BSP).
@@ -52,8 +52,8 @@ kirim file langsung. Link unggah tetap tersedia.
 
 Dengan `MESSAGE_SEND_ACCESS=admin` (atau `all`), Milo bisa mengirim pesan ke kontak pengguna dari nomor Fonnte.
 
-- **Konfirmasi wajib:** AI hanya menyusun draf. Pesan baru terkirim setelah pengguna membalas **Kirim** (atau
-  angka 1) dalam 15 menit. Pesan itu diberi tanda "— Milo, asisten pribadi <nama>".
+- **Konfirmasi wajib:** AI hanya menyusun draf. Pesan baru terkirim setelah pengguna menjawab dengan kata yang
+  berarti setuju ("kirim", "oke", "iya") dalam 15 menit; "jangan" atau "batal" membatalkannya. Pesan itu diberi tanda "— Milo, asisten pribadi <nama>".
 - **Balasan diteruskan:** balasan penerima dalam `RELAY_REPLY_HOURS` jam diteruskan ke pengguna. Penerima tidak
   mendapat menu pendaftaran, dan diberi ucapan terima kasih sekali.
 

@@ -29,6 +29,7 @@ export function toWhatsApp(markdown: string): string {
   out = out.replace(/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, `${BOLD_OPEN}$1${BOLD_CLOSE}`);
   out = out.replace(/__(?=\S)([\s\S]+?)(?<=\S)__/g, `${BOLD_OPEN}$1${BOLD_CLOSE}`);
 
+  out = plainDashes(out);
   out = out.replace(/^(\s*)[-*+]\s+/gm, "$1• ");
   out = out.replace(/~~(?=\S)(.+?)(?<=\S)~~/g, "~$1~");
 
@@ -41,13 +42,27 @@ export function toWhatsApp(markdown: string): string {
     row
       .split("|")
       .map((c) => c.trim())
-      .join(" — "),
+      .join(", "),
   );
 
   out = out.split(BOLD_OPEN).join("*").split(BOLD_CLOSE).join("*");
   out = out.replace(SLOT_PATTERN, (_m, i: string) => protectedParts[Number(i)] ?? "");
   out = out.replace(/\n{3,}/g, "\n\n");
   return out.trim();
+}
+
+/**
+ * Nobody reaches for an em dash on a phone keyboard, so a reply carrying one reads as written by a machine. They
+ * become the punctuation a person would have typed: a comma mid-sentence, a hyphen between the ends of a range.
+ */
+export function plainDashes(text: string): string {
+  return text
+    .replace(/^[ \t]*[—–][ \t]*/gm, "")
+    .replace(/(\d)\s*[—–]\s*(\d)/g, "$1-$2")
+    .replace(/([.!?:;,])\s*[—–]\s*/g, "$1 ")
+    .replace(/\s*—\s*/g, ", ")
+    .replace(/\s+–\s+/g, ", ")
+    .replace(/,\s*,/g, ",");
 }
 
 /** Splits text into WhatsApp-sized messages, preferring paragraph and sentence boundaries. */

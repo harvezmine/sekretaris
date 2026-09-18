@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { renderMenu } from "./menu.js";
+import { renderChoices } from "./menu.js";
 
 export interface Button {
   id: string;
   title: string;
   /** List rows only: a second line under the title. */
   description?: string;
+  /** Other words that count as choosing this, beyond the title itself. */
+  say?: readonly string[];
+  /** Marks the two answers to a plain question, so "oke" or "jangan" is enough to answer it. */
+  answer?: "yes" | "no";
 }
 
 export interface MediaFile {
@@ -240,13 +244,13 @@ export class DryRunClient implements WhatsApp {
 
   async sendButtons(to: string, body: string, buttons: Button[]) {
     assertButtons(body, buttons);
-    if (!this.supportsButtons) return this.record({ to, type: "text", text: renderMenu(body, buttons), buttons });
+    if (!this.supportsButtons) return this.record({ to, type: "text", text: body, buttons });
     return this.record({ to, type: "buttons", text: body, buttons });
   }
 
   async sendList(to: string, body: string, label: string, rows: Button[]) {
     assertList(body, label, rows);
-    if (!this.supportsButtons) return this.record({ to, type: "text", text: renderMenu(body, rows), buttons: rows });
+    if (!this.supportsButtons) return this.record({ to, type: "text", text: renderChoices(body, rows), buttons: rows });
     return this.record({ to, type: "list", text: body, buttons: rows });
   }
 

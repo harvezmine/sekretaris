@@ -135,9 +135,9 @@ export const TOOL_DEFS: BetaTool[] = (
     {
       name: "persona_set",
       description: [
-        "Change your own name and/or personality when the user asks, e.g. after they reply to the GAYA menu (\"nomor 11, namanya Yuki\") or say \"ganti nama kamu jadi Sari\". Give only what they want to change; the other stays as is. persona=standar returns to the standard style.",
+        "Change your own name and/or personality when the user asks, e.g. after they reply to the GAYA menu (\"yang ceria saja, namanya Yuki\") or say \"ganti nama kamu jadi Sari\". The user picks a style by what it is called or by how it sounds, never by a number. Give only what they want to change; the other stays as is. persona=standar returns to the standard style.",
         "When the user asks what styles exist, suggest typing GAYA to see the full menu with examples.",
-        `Menu numbers (number · id · label · gender · suggested name):\n${PERSONAS.map((p) => `${p.number} · ${p.id} · ${p.label} · ${p.gender} · ${p.suggestedName}`).join("\n")}`,
+        `The styles (id · label · what it sounds like · gender · suggested name):\n${PERSONAS.map((p) => `${p.id} · ${p.label} · ${p.tagline} · ${p.gender} · ${p.suggestedName}`).join("\n")}`,
       ].join("\n\n"),
       input_schema: {
         type: "object",

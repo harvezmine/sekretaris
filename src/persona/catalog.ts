@@ -2,8 +2,6 @@ export type PersonaGender = "cowok" | "cewek";
 
 export interface Persona {
   id: string;
-  /** Position in the menu the user sees; the model maps "nomor 4" through it. */
-  number: number;
   gender: PersonaGender;
   label: string;
   tagline: string;
@@ -19,7 +17,6 @@ export const STANDARD_PERSONA_ID = "standar";
 export const PERSONAS: readonly Persona[] = [
   {
     id: "eksekutif",
-    number: 1,
     gender: "cowok",
     label: "Eksekutif",
     tagline: "formal, lugas, langsung ke inti",
@@ -30,7 +27,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "santai",
-    number: 2,
     gender: "cowok",
     label: "Teman Santai",
     tagline: "akrab, ringan, bahasa sehari-hari",
@@ -41,7 +37,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "kocak",
-    number: 3,
     gender: "cowok",
     label: "Si Kocak",
     tagline: "humoris, suka bercanda dan pantun",
@@ -52,7 +47,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "anime-hero",
-    number: 4,
     gender: "cowok",
     label: "Anime Hero",
     tagline: "semangat membara ala tokoh shonen",
@@ -63,7 +57,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "butler",
-    number: 5,
     gender: "cowok",
     label: "Butler",
     tagline: "sangat sopan dan tenang ala kepala pelayan",
@@ -74,7 +67,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "mentor",
-    number: 6,
     gender: "cowok",
     label: "Mentor Bisnis",
     tagline: "bijak, memberi sudut pandang dan pertanyaan tajam",
@@ -85,7 +77,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "cool",
-    number: 7,
     gender: "cowok",
     label: "Cool & Singkat",
     tagline: "tenang, minim kata, tanpa basa-basi",
@@ -96,7 +87,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "sekretaris",
-    number: 8,
     gender: "cewek",
     label: "Sekretaris Eksekutif",
     tagline: "rapi, teliti, profesional",
@@ -107,7 +97,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "ceria",
-    number: 9,
     gender: "cewek",
     label: "Ceria",
     tagline: "hangat, positif, bikin semangat",
@@ -118,7 +107,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "bestie",
-    number: 10,
     gender: "cewek",
     label: "Bestie",
     tagline: "gaul, heboh, seperti sahabat",
@@ -129,7 +117,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "anime-kawaii",
-    number: 11,
     gender: "cewek",
     label: "Anime Kawaii",
     tagline: "imut dan manis ala anime",
@@ -140,7 +127,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "tsundere",
-    number: 12,
     gender: "cewek",
     label: "Tsundere",
     tagline: "pura-pura cuek, padahal perhatian",
@@ -151,7 +137,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "perhatian",
-    number: 13,
     gender: "cewek",
     label: "Perhatian",
     tagline: "lembut, keibuan, mengingatkan jaga diri",
@@ -162,7 +147,6 @@ export const PERSONAS: readonly Persona[] = [
   },
   {
     id: "analis",
-    number: 14,
     gender: "cewek",
     label: "Analis Tajam",
     tagline: "cerdas, berbasis data, memberi opsi dan risiko",
@@ -185,9 +169,9 @@ export function normalizeAssistantName(raw: string): string | undefined {
   return ASSISTANT_NAME.test(name) ? name : undefined;
 }
 
-/** Both genders, numbered 1–14, each with a one-line example of the voice. */
+/** Both genders, each with a one-line example of the voice. Names, not numbers: people pick by what it sounds like. */
 export function personaChoices(): string[] {
-  const line = (p: Persona) => `${p.number}. *${p.label}* — ${p.tagline}\n    _"${p.sample}"_`;
+  const line = (p: Persona) => `• *${p.label}*: ${p.tagline}\n    _"${p.sample}"_`;
   return [
     "*Cowok*",
     ...PERSONAS.filter((p) => p.gender === "cowok").map(line),
@@ -204,8 +188,8 @@ export function personaMenu(currentName: string, current: Persona | undefined): 
     "",
     ...personaChoices(),
     "",
-    "Balas misalnya: *nomor 11, namanya Yuki*",
-    "Nama boleh apa saja. Untuk kembali ke gaya awal, balas *gaya standar*.",
+    "Bilang saja gayanya, misalnya *pakai gaya ceria, namanya Yuki*.",
+    "Nama boleh apa saja. Untuk kembali ke gaya awal, bilang *gaya standar*.",
   ].join("\n");
 }
 

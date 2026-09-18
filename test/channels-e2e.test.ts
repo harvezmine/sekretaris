@@ -94,28 +94,31 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       assert.equal(await userByWa("6282200000001"), undefined);
     });
 
-    test("menus arrive as numbered text and number or title replies act as buttons", async () => {
+    test("choices are asked in words, and an answer in words carries the conversation", async () => {
       const u = "6282200000002";
       assert.equal((await fonnte(u, "halo")).statusCode, 200);
       const welcome = last(u)!;
       assert.equal(welcome.type, "text");
       assert.match(welcome.text!, /Halo Bos/);
-      assert.ok(!/Balas dengan angka/.test(welcome.text!), "the first contact has nothing to pick from");
 
       await fonnte(u, "MENU");
-      assert.match(last(u)!.text!, /Balas dengan angka:\n\*1\.\* Punya Kode\n\*2\.\* Lihat Harga\n\*3\.\* Tanya Dulu$/);
+      assert.equal(last(u)!.text, "Punya kode undangan, mau lihat harganya dulu, atau ada yang mau ditanyakan?");
 
-      await fonnte(u, "2");
+      await fonnte(u, "lihat harganya dulu");
       const out = wa.sent.filter((e) => e.to === u);
       assert.match(out.at(-2)!.text!, /Harga Milo/);
-      assert.match(out.at(-1)!.text!, /\*1\.\* Langganan\n\*2\.\* Eksekutif\n\*3\.\* Punya Kode/);
+      assert.equal(out.at(-1)!.text, "Mau saya siapkan pembayarannya, tertarik yang Eksekutif, atau sudah punya kode undangan?");
 
       await fonnte(u, "punya kode");
-      assert.equal(last(u)!.text, "Boleh, ketik kode undangannya di sini.");
+      assert.equal(last(u)!.text, "Boleh, ketik kodenya di sini.");
       assert.equal((await userByWa(u))!.state, "AWAITING_CODE");
 
+      for (const message of wa.sent.filter((e) => e.to === u && e.type === "text")) {
+        assert.doesNotMatch(message.text!, /Balas dengan angka|^\*\d+\.\*/m, message.text!);
+      }
+
       await fonnte(u, "2");
-      assert.match(last(u)!.text!, /Kodenya belum cocok/, "a bare number with no menu open is just text");
+      assert.match(last(u)!.text!, /Kodenya belum cocok/, "a bare number is just text, never a choice");
     });
 
     test("group messages and duplicate deliveries are ignored", async () => {
@@ -274,22 +277,23 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         assert.match(reply!.text!, /menunggu konfirmasi pengguna/);
         assert.equal(
           preview!.text,
-          "Halo Pak Andi, saya Milo, asisten Josh. Rapat jadi jam 3 sore.\n\n_— Milo, asisten pribadi Josh. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._",
+          "Halo Pak Andi, saya Milo, asisten Josh. Rapat jadi jam 3 sore.\n\n_Saya Milo, asisten pribadi Josh. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._",
         );
-        assert.match(
-          confirm!.text!,
-          /Saya kirim ke \*6281233334444\* sekarang\? Tombolnya berlaku 15 menit\.\n\nBalas dengan angka:\n\*1\.\* Kirim\n\*2\.\* Batal$/,
+        assert.equal(
+          confirm!.text,
+          "Saya kirim ke *6281233334444* sekarang? Kalau ada yang mau diubah, bilang saja. Saya tunggu 15 menit.",
+          "a question, not a list of options",
         );
         assert.equal(sentTo(andi).length, 0, "nothing goes out before the owner confirms");
 
-        await fonnte(owner, "1");
+        await fonnte(owner, "kirim aja");
         assert.equal(sentTo(andi).length, 1);
         assert.equal(sentTo(andi)[0]!.text, preview!.text);
         assert.match(last(owner)!.text!, /Sudah terkirim ke \*6281233334444\*/);
         await sql`insert into messages (user_id, direction, kind, body, payload, processed)
                   values (${ownerRow.id}, 'out', 'interactive', 'lama', ${sql.json({ buttons: confirm!.buttons } as never)}, true)`;
-        await fonnte(owner, "1");
-        assert.equal(sentTo(andi).length, 1, "tapping an old confirmation again does not send twice");
+        await fonnte(owner, "kirim");
+        assert.equal(sentTo(andi).length, 1, "answering an old confirmation again does not send twice");
         assert.match(last(owner)!.text!, /sudah terkirim tadi/);
 
         await fonnte(andi, "Siap, saya datang", { name: "Andi" });
@@ -310,7 +314,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         assert.doesNotMatch(agentTurns.at(-1)!, /Balasan dari/, "each reply reaches the model once");
 
         await fonnte(owner, "kirim ke 081233334444: Pak Andi, rapatnya batal.");
-        await fonnte(owner, "batal");
+        await fonnte(owner, "jangan jadi");
         assert.match(last(owner)!.text!, /tidak jadi dikirim/);
         assert.equal(sentTo(andi).length, 2);
 
@@ -347,7 +351,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       config.SERVER_ADMIN_NUMBERS = [owner, rina].join(",");
       const sendTo = async (to: string, body: string) => {
         await fonnte(owner, `kirim ke ${to}: ${body}`);
-        await fonnte(owner, "1");
+        await fonnte(owner, "iya kirim");
       };
       try {
         // Budi asked about the service weeks ago, so he already has a row of his own with consent given.
@@ -358,14 +362,14 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         await sendTo(budi, "Pak Budi, jadi rapat jam 4?");
         assert.equal(
           sentTo(budi).at(-1)!.text,
-          "Pak Budi, jadi rapat jam 4?\n\n_— Milo, asisten pribadi Josh. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._",
+          "Pak Budi, jadi rapat jam 4?\n\n_Saya Milo, asisten pribadi Josh. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._",
         );
         await fonnte(budi, "Oke jam 4 saya datang", { name: "Budi" });
         assert.equal(last(owner)!.text, "💬 *Budi* membalas (6281244445555):\nOke jam 4 saya datang", "the reply reaches Josh, not the preboarding chat");
 
         // MENU is how he leaves the thread and talks to Milo about the service itself.
         await fonnte(budi, "MENU", { name: "Budi" });
-        assert.match(last(budi)!.text!, /Balas dengan angka/);
+        assert.match(last(budi)!.text!, /Punya kode undangan, mau lihat harganya dulu/);
         const quiet = sentTo(owner).length;
         await fonnte(budi, "harganya berapa ya?", { name: "Budi" });
         assert.equal(sentTo(owner).length, quiet, "that question is for Milo, and Josh is not disturbed by it");
@@ -378,7 +382,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         await sendTo(rina, "Bu Rina, bisa kirim draftnya hari ini?");
         assert.equal(
           sentTo(rina).at(-1)!.text,
-          "Bu Rina, bisa kirim draftnya hari ini?\n\n_— Milo, asisten pribadi Josh._",
+          "Bu Rina, bisa kirim draftnya hari ini?\n\n_Saya Milo, asisten pribadi Josh._",
           "no promise to relay: her own assistant answers her",
         );
         const undisturbed = sentTo(owner).length;
@@ -392,8 +396,8 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         assert.doesNotMatch(agentTurns.at(-1)!, /Pesan masuk/, "her assistant is told once");
 
         await fonnte(rina, `kirim ke ${owner}: Siap Pak Josh, sore ini saya kirim`);
-        await fonnte(rina, "1");
-        assert.equal(sentTo(owner).at(-1)!.text, "Siap Pak Josh, sore ini saya kirim\n\n_— Milo, asisten pribadi Rina._");
+        await fonnte(rina, "oke kirim");
+        assert.equal(sentTo(owner).at(-1)!.text, "Siap Pak Josh, sore ini saya kirim\n\n_Saya Milo, asisten pribadi Rina._");
         await fonnte(owner, "ada kabar dari Rina?");
         assert.match(
           agentTurns.at(-1)!,
@@ -404,14 +408,41 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       }
     });
 
-    test("the quick menu is a numbered list, and a number or title opens the action", async () => {
+    test("a plain oke answers the question that is open, and nothing else", async () => {
+      const u = "6282200000051";
+      const user = await readyUser(u, "Josh");
+      config.SERVER_ADMIN_NUMBERS = u;
+      const ask = (minutesAgo: number) => sql`
+        insert into messages (user_id, direction, kind, body, payload, processed, created_at)
+        values (${user.id}, 'out', 'interactive', 'Saya kirim sekarang?',
+                ${sql.json({ buttons: [{ id: "relay_send:999999", title: "Kirim", answer: "yes" }, { id: "relay_cancel:999999", title: "Batal", answer: "no" }] } as never)},
+                true, now() - ${`${minutesAgo} minutes`}::interval)
+      `;
+
+      await ask(2);
+      const turns = agentTurns.length;
+      await fonnte(u, "oke");
+      assert.equal(agentTurns.length, turns, "a fresh question is answered by the word alone");
+      assert.match(last(u)!.text!, /Konfirmasinya sudah kedaluwarsa/, "and that answer reaches the confirmation, not the model");
+
+      await ask(180);
+      await fonnte(u, "oke");
+      assert.equal(agentTurns.at(-1), "oke", "three hours later the same word is just conversation");
+
+      await ask(180);
+      await fonnte(u, "kirim");
+      assert.match(last(u)!.text!, /Konfirmasinya sudah kedaluwarsa/, "naming the choice still works, however old the question is");
+      config.SERVER_ADMIN_NUMBERS = "";
+    });
+
+    test("the quick menu is a plain list, and saying what you need opens it", async () => {
       const u = "6282200000031";
       await readyUser(u);
       await fonnte(u, "menu");
       const menu = last(u)!;
       assert.equal(menu.type, "text");
-      assert.match(menu.text!, /Balas dengan angka:\n\*1\.\* 📅 Agenda hari ini — Pengingat hari ini dan besok\n\*2\.\* ⏰ Buat pengingat/);
-      await fonnte(u, "1");
+      assert.match(menu.text!, /^Hai\. Yang biasa saya bantu, sebut saja mana yang Anda perlukan:\n• 📅 Agenda hari ini: Pengingat hari ini dan besok\n• ⏰ Buat pengingat/);
+      await fonnte(u, "agenda");
       assert.match(last(u)!.text!, /Agenda hari ini/);
       await fonnte(u, "menu");
       await fonnte(u, "profil saya");
@@ -539,7 +570,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       const user = (await userByWa(waId))!;
       assert.equal(user.status, "active");
       assert.equal(user.plan, "profesional");
-      assert.ok(wa.sent.some((e) => e.to === waId && /Pembayaran diterima/.test(e.text ?? "")));
+      assert.ok(wa.sent.some((e) => e.to === waId && /Pembayarannya sudah masuk/.test(e.text ?? "")));
       assert.equal((await callback(payment.providerRef)).statusCode, 200, "a repeated callback is harmless");
     });
 

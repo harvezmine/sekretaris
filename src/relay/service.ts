@@ -64,14 +64,14 @@ export function composeRelayText(
   body: string,
   opts: { toUser?: boolean } = {},
 ): string {
-  const signature = `_— ${assistantLabel(owner)}, asisten pribadi ${ownerLabel(owner)}.`;
+  const signature = `_Saya ${assistantLabel(owner)}, asisten pribadi ${ownerLabel(owner)}.`;
   return `${body.trim()}\n\n${signature}${opts.toUser ? "" : " Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan."}_`;
 }
 
 export function relayButtons(id: string): Button[] {
   return [
-    { id: `relay_send:${id}`, title: "Kirim" },
-    { id: `relay_cancel:${id}`, title: "Batal" },
+    { id: `relay_send:${id}`, title: "Kirim", say: ["kirim sekarang", "kirimkan"], answer: "yes" },
+    { id: `relay_cancel:${id}`, title: "Batal", say: ["batalkan", "jangan"], answer: "no" },
   ];
 }
 

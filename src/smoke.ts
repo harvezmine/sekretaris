@@ -46,7 +46,7 @@ async function main(): Promise<void> {
     const total = rows.reduce((a, r) => a + Number(r.costUsd), 0);
     const reads = rows.slice(1).some((r) => r.cacheRead > 0);
     console.log(`Total: $${total.toFixed(5)}`);
-    console.log(reads ? "Prompt cache: OK (ada cache_read pada panggilan berikutnya)." : "PERINGATAN: tidak ada cache_read — periksa prefix prompt.");
+    console.log(reads ? "Prompt cache: OK (ada cache_read pada panggilan berikutnya)." : "PERINGATAN: tidak ada cache_read, periksa prefix prompt.");
   } finally {
     await sql`delete from users where id = ${user!.id}`;
     await sql.end({ timeout: 5 });

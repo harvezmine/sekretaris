@@ -34,7 +34,7 @@ function toContact(person: Person | undefined): GoogleContact | undefined {
     name,
     phone,
     email,
-    organization: [org?.name, org?.title].filter(Boolean).join(" — ") || null,
+    organization: [org?.name, org?.title].filter(Boolean).join(", ") || null,
   };
 }
 

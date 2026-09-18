@@ -133,7 +133,7 @@ export function eventLine(e: CalendarEvent, timeZone: string, withDay = false): 
     e.meetLink ? "Meet" : "",
     e.attendees.length ? `${e.attendees.length} tamu` : "",
   ].filter(Boolean);
-  return `${eventTime(e, timeZone, withDay)} — ${e.title}${extras.length ? ` (${extras.join(", ")})` : ""}`;
+  return `${eventTime(e, timeZone, withDay)} ${e.title}${extras.length ? ` (${extras.join(", ")})` : ""}`;
 }
 
 export interface Slot {

@@ -11,11 +11,11 @@ import {
 } from "../src/persona/catalog.ts";
 
 describe("persona catalog", () => {
-  test("seven personas per gender, numbered 1–14 with unique ids", () => {
+  test("seven personas per gender, each with its own id and label", () => {
     assert.equal(PERSONAS.filter((p) => p.gender === "cowok").length, 7);
     assert.equal(PERSONAS.filter((p) => p.gender === "cewek").length, 7);
-    assert.deepEqual(PERSONAS.map((p) => p.number), Array.from({ length: 14 }, (_, i) => i + 1));
     assert.equal(new Set(PERSONAS.map((p) => p.id)).size, 14);
+    assert.equal(new Set(PERSONAS.map((p) => p.label.toLowerCase())).size, 14, "a style is picked by its name, so no two may share one");
     assert.ok(!PERSONAS.some((p) => p.id === STANDARD_PERSONA_ID));
     for (const id of ["anime-hero", "anime-kawaii", "kocak", "bestie", "tsundere"]) assert.ok(findPersona(id), id);
     assert.equal(findPersona("tidak-ada"), undefined);
@@ -25,10 +25,11 @@ describe("persona catalog", () => {
   test("the menu lists every persona with its example and fits in one WhatsApp message", () => {
     const menu = personaMenu("Milo", undefined);
     for (const p of PERSONAS) {
-      assert.ok(menu.includes(`${p.number}. *${p.label}*`), p.label);
+      assert.ok(menu.includes(`• *${p.label}*`), p.label);
       assert.ok(menu.includes(p.sample), p.id);
     }
-    assert.ok(menu.indexOf("*Cowok*") < menu.indexOf("1. *") && menu.indexOf("*Cewek*") < menu.indexOf("8. *"));
+    assert.doesNotMatch(menu, /^\s*\d+[.)]/m, "styles are chosen by name, never by number");
+    assert.ok(menu.indexOf("*Cowok*") < menu.indexOf("*Cewek*"));
     assert.ok(menu.length < 4096, `${menu.length} karakter`);
     assert.match(personaMenu("Yuki", findPersona("anime-kawaii")), /Sekarang: \*Yuki\*, gaya \*Anime Kawaii\* \(cewek\)/);
   });
@@ -51,9 +52,9 @@ describe("persona catalog", () => {
     assert.match(personaBlock("Milo", undefined), /Style: standard/);
   });
 
-  test("persona_set is a shared tool whose menu numbers match the catalog", () => {
+  test("persona_set is a shared tool whose style list matches the catalog", () => {
     const tool = TOOL_DEFS.find((t) => t.name === "persona_set")!;
-    for (const p of PERSONAS) assert.ok(tool.description!.includes(`${p.number} · ${p.id} · ${p.label}`), p.id);
+    for (const p of PERSONAS) assert.ok(tool.description!.includes(`${p.id} · ${p.label} · ${p.tagline}`), p.id);
     const names = TOOL_DEFS.map((t) => t.name);
     assert.deepEqual(names, [...names].sort());
   });

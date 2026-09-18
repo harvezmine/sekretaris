@@ -232,7 +232,7 @@ export function serverActionPreview(action: PendingAction): string {
 
 export function serverActionQuestion(action: PendingAction): string {
   const p = action.payload as unknown as ServerRunPayload;
-  return `Jalankan sekarang di *${p.server}*? Batas waktu ${Math.round(p.timeoutSec / 60)} menit, konfirmasi berlaku ${ACTION_MINUTES} menit.`;
+  return `Saya jalankan sekarang di *${p.server}*? Kalau lewat ${Math.round(p.timeoutSec / 60)} menit saya hentikan. Saya tunggu jawaban Anda ${ACTION_MINUTES} menit.`;
 }
 
 export interface ServerActionOutcome {
@@ -256,7 +256,7 @@ export async function runServerAction(action: PendingAction, user: UserRow): Pro
     return {
       ok: outcome.ok,
       text,
-      note: `[Pengguna menekan Jalankan: ${what} di ${p.server} ${outcome.ok ? "berhasil" : "gagal"}${outcome.error ? `: ${outcome.error}` : ""}]`,
+      note: `[Pengguna menyetujui: ${what} di ${p.server} ${outcome.ok ? "berhasil" : "gagal"}${outcome.error ? `: ${outcome.error}` : ""}]`,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

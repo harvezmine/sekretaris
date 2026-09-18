@@ -76,15 +76,35 @@ export async function buildApp(deps: AppDeps): Promise<App> {
   );
   const scheduler = new Scheduler(outbox, log, payments, agent);
 
-  /** On channels without buttons, a numeric or title reply to the last menu becomes that button tap. */
+  /** A plain "oke" hours later is conversation, not consent; a question only counts while it is still the open one. */
+  const ANSWER_WINDOW_MINUTES = 60;
+
+  /** On channels without buttons, an answer in words to the question Milo just asked becomes that choice. */
   async function asButton(userId: string, inbound: Inbound): Promise<Inbound> {
     if (deps.wa.supportsButtons || inbound.kind !== "text") return inbound;
-    const [last] = await sql<{ kind: string; payload: { buttons?: Button[] } | null }[]>`
-      select kind, payload from messages where user_id = ${userId} and direction = 'out' order by id desc limit 1
+    const [last] = await sql<{ kind: string; payload: { buttons?: Button[] } | null; answered: boolean; ageMinutes: number }[]>`
+      select
+        m.kind,
+        m.payload,
+        exists (select 1 from messages r where r.user_id = m.user_id and r.direction = 'in' and r.id > m.id) as answered,
+        extract(epoch from now() - m.created_at) / 60 as age_minutes
+      from messages m
+      where m.user_id = ${userId} and m.direction = 'out'
+      order by m.id desc limit 1
     `;
-    const buttons = last?.kind === "interactive" ? last.payload?.buttons : undefined;
+    const buttons = last?.kind === "interactive" && !last.answered ? last.payload?.buttons : undefined;
     const hit = buttons ? matchMenuReply(inbound.text, buttons) : undefined;
-    return hit ? { kind: "button", id: hit.id, title: hit.title } : inbound;
+    if (!hit) return inbound;
+    // Naming the choice stands on its own; a bare yes or no only means this question while it is fresh.
+    const bare = hit.answer && !comparableSame(inbound.text, hit);
+    if (bare && Number(last!.ageMinutes) > ANSWER_WINDOW_MINUTES) return inbound;
+    return { kind: "button", id: hit.id, title: hit.title };
+  }
+
+  function comparableSame(text: string, button: Button): boolean {
+    const norm = (v: string) => v.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+    const key = norm(text);
+    return [button.title, ...(button.say ?? [])].some((c) => key.startsWith(norm(c)));
   }
 
   async function ingest(messages: InboundMessage[]): Promise<void> {

@@ -23,7 +23,7 @@ const HELP = `Milo CLI
   paid <provider_ref>   Tandai pembayaran lunas lewat server yang sedang berjalan (butuh ADMIN_TOKEN & PORT).
   servers               Daftar server yang bisa dicek Milo dan jumlah nomor admin.
   status <nomor>        Fitur apa yang aktif untuk satu nomor: kirim pesan ke orang lain, server, Google,
-                        pencarian web, lampiran — beserta daftar tool yang diterima AI untuk nomor itu.
+                        pencarian web, lampiran, beserta daftar tool yang diterima AI untuk nomor itu.
   server <nama> <cek> [target|url] [--lines N]
                         Jalankan satu cek server persis seperti yang dilakukan Milo.
                         Cek: ${CHECKS.join(", ")}.
@@ -32,8 +32,8 @@ const HELP = `Milo CLI
 
   Simulasi pesan masuk (format mengikuti WA_PROVIDER; dengan WA_DRY_RUN=true balasan muncul di log app):
   say <nomor> <teks>    Kirim pesan teks seolah-olah dari nomor itu.
-  tap <nomor> <id>      Tekan tombol (code, price, faq, subscribe, executive, resend_qr, cancel_pay, delete_yes, delete_no).
-                        Di Fonnte, ini mengirim judul tombolnya — sama seperti pengguna membalas menu.
+  tap <nomor> <id>      Pilih (code, price, faq, subscribe, executive, resend_qr, cancel_pay, delete_yes, delete_no).
+                        Di Fonnte, ini mengirim kata pilihannya, sama seperti pengguna menjawab pertanyaan itu.
 `;
 
 async function postFonnte(from: string, message: string): Promise<void> {

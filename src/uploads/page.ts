@@ -13,9 +13,9 @@ const SCRIPT = `
     btn.disabled = true;
     for (const [i, file] of files.entries()) {
       const li = document.createElement("li");
-      li.textContent = file.name + " — mengirim…";
+      li.textContent = file.name + ": mengirim…";
       list.appendChild(li);
-      if (file.size > MAX_BYTES) { li.textContent = file.name + " — terlalu besar"; li.className = "bad"; continue; }
+      if (file.size > MAX_BYTES) { li.textContent = file.name + ": terlalu besar"; li.className = "bad"; continue; }
       const caption = i === files.length - 1 ? note.value.trim() : "";
       try {
         const res = await fetch(location.pathname, {
@@ -28,10 +28,10 @@ const SCRIPT = `
           body: file,
         });
         const out = await res.json().catch(() => ({ message: "Gagal (" + res.status + ")" }));
-        li.textContent = file.name + " — " + (out.message || (res.ok ? "terkirim" : "gagal"));
+        li.textContent = file.name + ": " + (out.message || (res.ok ? "terkirim" : "gagal"));
         li.className = res.ok ? "ok" : "bad";
       } catch {
-        li.textContent = file.name + " — koneksi terputus, coba lagi";
+        li.textContent = file.name + ": koneksi terputus, coba lagi";
         li.className = "bad";
       }
     }

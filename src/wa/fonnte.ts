@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { assertButtons, assertList, WhatsAppError, type Button, type MediaFile, type WhatsApp } from "./client.js";
 import type { Inbound, InboundMessage, SharedContact } from "./inbound.js";
-import { renderMenu } from "./menu.js";
+import { renderChoices } from "./menu.js";
 
 type Fetch = typeof fetch;
 
@@ -50,12 +50,12 @@ export class FonnteClient implements WhatsApp {
 
   sendButtons(to: string, body: string, buttons: Button[]) {
     assertButtons(body, buttons);
-    return this.send({ target: to, message: renderMenu(body, buttons) });
+    return this.send({ target: to, message: body });
   }
 
   sendList(to: string, body: string, label: string, rows: Button[]) {
     assertList(body, label, rows);
-    return this.send({ target: to, message: renderMenu(body, rows) });
+    return this.send({ target: to, message: renderChoices(body, rows) });
   }
 
   async sendImage(to: string, png: Buffer, caption?: string) {

@@ -72,8 +72,9 @@ Dua kanal, dipilih lewat `WA_PROVIDER`:
 | `meta` | Jalur resmi: WhatsApp Cloud API | [docs/setup-meta.md](docs/setup-meta.md) |
 | `fonnte` | POC cepat lewat gateway tidak resmi — tanpa tombol, nomor bisa diblokir | [docs/setup-fonnte.md](docs/setup-fonnte.md) |
 
-Di Fonnte, menu tampil sebagai daftar bernomor dan balasan "1"/"2"/"3" (atau judul pilihannya) diterjemahkan jadi
-tombol. Pengingat selalu terkirim karena tidak ada jendela 24 jam. Gambar QR diganti tautan bayar bila paket
+Di Fonnte tidak ada tombol, jadi pilihan ditanyakan di dalam kalimat ("Saya kirim sekarang, atau diubah dulu?")
+dan jawaban dengan kata biasa — _kirim_, _oke_, _jangan_, _lihat harganya_ — dikenali sebagai pilihan itu. Tidak ada
+yang diminta membalas dengan angka. Pengingat selalu terkirim karena tidak ada jendela 24 jam. Gambar QR diganti tautan bayar bila paket
 Fonnte-mu tidak mendukung lampiran.
 
 `scripts/public-url.sh` mencetak alamat publik dan URL webhook yang harus diisi di dashboard.
@@ -99,7 +100,7 @@ Kalau pengguna malah mengirim permintaan, perkenalan dijeda dan permintaannya di
 disimpan di `users.profile` dan dikirim ke model di setiap sesi. Model juga bisa mengubahnya lewat
 `profile_update`.
 
-**MENU** membuka menu cepat: daftar interaktif di Meta, daftar bernomor di Fonnte. Isinya agenda hari ini, buat
+**MENU** membuka menu cepat: daftar interaktif di Meta, daftar biasa tanpa nomor di Fonnte. Isinya agenda hari ini, buat
 pengingat, kirim file, pesan ke orang lain, cek server, ganti gaya, profil, contoh perintah, dan paket. Kata kunci
 **AGENDA**, **GAYA**, **FILE**, **PROFIL**, dan **BANTUAN** langsung membuka menu yang sesuai. Semua jawaban menu
 bersifat statis, tapi tetap dicatat di percakapan supaya AI tahu konteksnya.
@@ -273,7 +274,7 @@ src/
   pipeline.ts         mesin status onboarding + penanganan pesan pengguna aktif
   debounce.ts         penggabung pesan beruntun per pengguna
   agent/              loop Claude, prompt, tool, sesi, harga token
-  wa/                 klien Cloud API, Fonnte & dry-run, parser webhook, menu bernomor, format WhatsApp, outbox
+  wa/                 klien Cloud API, Fonnte & dry-run, parser webhook, pilihan dalam kata, format WhatsApp, outbox
   onboarding/         teks statis dan kode undangan
   payments/           interface provider, bypass, InstanPay, aktivasi langganan
   capture/            unduh media, ekstraksi PDF/DOCX/teks

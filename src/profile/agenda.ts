@@ -50,7 +50,7 @@ function reminderEntries(items: AgendaItem[], timeZone: string, now: Date, icons
     return {
       at: i.fireAt,
       sort: i.fireAt.getTime(),
-      line: `• ${icons ? "⏰ " : ""}${timeFmt(i.fireAt, timeZone)} — ${i.text}${i.repeat ? " 🔁" : ""}${done ? " _(sudah lewat)_" : ""}`,
+      line: `• ${icons ? "⏰ " : ""}${timeFmt(i.fireAt, timeZone)} ${i.text}${i.repeat ? " 🔁" : ""}${done ? " _(sudah lewat)_" : ""}`,
     };
   });
 }
@@ -96,11 +96,11 @@ export async function agendaText(user: UserRow, now = new Date()): Promise<strin
   const entries = [...reminderEntries(today, user.timezone, now, icons), ...eventEntries(calendar?.today ?? [], user.timezone, now)].sort(
     (a, b) => a.sort - b.sort,
   );
-  const lines = [`📅 *Agenda hari ini* — ${dayFmt(now, user.timezone)}`];
+  const lines = [`📅 *Agenda hari ini*, ${dayFmt(now, user.timezone)}`];
   lines.push(...(entries.length ? entries.map((e) => e.line) : ["Belum ada agenda untuk hari ini."]));
   if (calendar?.note) lines.push(calendar.note);
   const next = [
-    ...tomorrow.map((r) => ({ at: r.fireAt, text: `${timeFmt(r.fireAt, user.timezone)} — ${r.text}` })),
+    ...tomorrow.map((r) => ({ at: r.fireAt, text: `${timeFmt(r.fireAt, user.timezone)} ${r.text}` })),
     ...(calendar?.tomorrow ?? []).map((e) => ({ at: e.start, text: eventLine(e, user.timezone) })),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
   if (next.length) lines.push("", `*Besok:* ${next.length} agenda, pertama ${calendar ? "" : "jam "}${next[0]!.text}`);
@@ -120,7 +120,7 @@ export async function importantMail(user: UserRow): Promise<string[]> {
   try {
     const mails = await searchMail(user.id, "is:unread is:important newer_than:1d", 3);
     if (!mails.length) return [];
-    return ["", `📧 *Email penting belum dibaca* (${mails.length}):`, ...mails.map((m) => `• ${senderName(m.from)} — ${m.subject}`)];
+    return ["", `📧 *Email penting belum dibaca* (${mails.length}):`, ...mails.map((m) => `• ${senderName(m.from)}: ${m.subject}`)];
   } catch {
     return [];
   }
@@ -141,6 +141,6 @@ export async function briefingText(user: UserRow, now = new Date()): Promise<str
     ...(calendar?.note ? [calendar.note] : []),
     ...mail,
     "",
-    `Ketik *MENU* untuk pilihan cepat. — ${user.assistantName ?? DEFAULT_ASSISTANT_NAME}`,
+    `Ketik *MENU* kalau mau lihat pilihan cepat.`,
   ].join("\n");
 }

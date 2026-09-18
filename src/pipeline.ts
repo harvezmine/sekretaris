@@ -93,6 +93,7 @@ import { hasAccess, type Payments } from "./payments/service.js";
 import { sttEnabled, transcribe } from "./voice/transcribe.js";
 import type { WhatsApp } from "./wa/client.js";
 import type { Inbound, SharedContact } from "./wa/inbound.js";
+import { plainDashes } from "./wa/format.js";
 import type { Outbox } from "./wa/outbox.js";
 import { addDays, errorMessage, formatDate, formatDateTime, normalizePhone, type Logger } from "./util.js";
 
@@ -266,7 +267,7 @@ export class Pipeline {
     }
     // Opening the menu is how someone who is answering a message for another user turns to Milo instead.
     const updated = await updateUser(user.id, { state: "PREBOARD", stateData: { serviceSince: new Date().toISOString() } });
-    await this.d.outbox.buttons(updated, copy.TEXT.menuPrompt, this.menuFor(updated));
+    await this.d.outbox.buttons(updated, copy.menuPrompt(Boolean(updated.plan)), this.menuFor(updated));
   }
 
   /**
@@ -299,7 +300,8 @@ export class Pipeline {
       await this.d.outbox.text(user, copy.TEXT.preboardFallback, { raw: true });
       return;
     }
-    if (outcome.text) await this.d.outbox.text(user, outcome.text, { raw: true });
+    // Written by a model, so it gets the same cleanup as any other model text before it is sent.
+    if (outcome.text) await this.d.outbox.text(user, plainDashes(outcome.text), { raw: true });
     if (outcome.checkout) await this.startCheckout(user.consentAt ? user : await updateUser(user.id, { consentAt: new Date() }));
   }
 
@@ -332,7 +334,7 @@ export class Pipeline {
         return;
       case copy.BTN.faq.id:
         await this.d.outbox.text(user, copy.FAQ, { raw: true });
-        await this.d.outbox.buttons(user, copy.TEXT.afterInfo, [copy.BTN.code, copy.BTN.price]);
+        await this.d.outbox.buttons(user, copy.TEXT.afterFaq, [copy.BTN.code, copy.BTN.price]);
         return;
       case copy.BTN.subscribe.id:
         return this.startCheckout(await updateUser(user.id, consent));
@@ -357,7 +359,7 @@ export class Pipeline {
         await this.d.payments.cancelPending(user.id);
         const updated = await updateUser(user.id, { state: hasAccess(user) ? "READY" : "MENU", stateData: {} });
         await this.d.outbox.text(updated, copy.TEXT.paymentCancelled, { raw: true });
-        if (!hasAccess(updated)) await this.d.outbox.buttons(updated, copy.TEXT.menuPrompt, this.menuFor(updated));
+        if (!hasAccess(updated)) await this.d.outbox.buttons(updated, copy.menuPrompt(Boolean(updated.plan)), this.menuFor(updated));
         return;
       }
       case copy.BTN.deleteYes.id:
@@ -447,7 +449,7 @@ export class Pipeline {
     const pending = await this.d.payments.pendingFor(user.id);
     if (!pending) {
       const updated = await updateUser(user.id, { state: hasAccess(user) ? "READY" : "MENU", stateData: {} });
-      await this.d.outbox.buttons(updated, copy.TEXT.menuPrompt, this.menuFor(updated));
+      await this.d.outbox.buttons(updated, copy.menuPrompt(Boolean(updated.plan)), this.menuFor(updated));
       return;
     }
     await this.d.outbox.buttons(user, copy.TEXT.awaitingPayment, [copy.BTN.resendQr, copy.BTN.cancelPay]);
@@ -546,7 +548,7 @@ export class Pipeline {
             const { capture, note } = await saveMediaCapture(this.d.wa, user.id, inbound);
             const pages = capture.pageCount ? `, ${capture.pageCount} hlm` : "";
             const label = inbound.kind === "image" ? "Foto" : inbound.kind === "video" ? "Video" : "Dokumen";
-            notes.push(`[${label} tersimpan #${capture.id}: ${capture.title}${pages}${note ? ` — ${note}` : ""}]`);
+            notes.push(`[${label} tersimpan #${capture.id}: ${capture.title}${pages}${note ? `: ${note}` : ""}]`);
             const icon = inbound.kind === "image" ? "🖼️" : "📎";
             const scan = capture.status !== "ready" && note ? `\n_Catatan: ${note}, jadi isinya belum bisa saya baca._` : "";
             replies.push(`${icon} Tersimpan: *${capture.title}*${pages} (#${capture.id}).${scan}`);
@@ -594,7 +596,7 @@ export class Pipeline {
           if (saved.length) {
             notes.push(`[Kontak tersimpan: ${saved.join(", ")}]`);
             replies.push(
-              `👤 Kontak tersimpan: *${saved.join(", ")}*. Kalau ada panggilan khusus, bilang saja — misalnya "${saved[0]} itu PM saya".`,
+              `👤 Kontak tersimpan: *${saved.join(", ")}*. Kalau ada panggilan khusus, bilang saja, misalnya "${saved[0]} itu PM saya".`,
             );
           }
           break;
@@ -736,20 +738,20 @@ export class Pipeline {
     if (action === "cancel") {
       const row = await cancelRelay(user, id);
       reply = row ? copy.relayCancelled(row.contactName ?? row.toWa) : copy.TEXT.relayUnavailable;
-      note = `[Pengguna menekan Batal: pesan ${row ? `ke ${row.contactName ?? row.toWa} ` : ""}tidak dikirim]`;
+      note = `[Pengguna membatalkan: pesan ${row ? `ke ${row.contactName ?? row.toWa} ` : ""}tidak dikirim]`;
     } else {
       const outcome = await confirmRelay(user, id, this.d.wa);
       const name = outcome.row ? (outcome.row.contactName ?? outcome.row.toWa) : "";
       if (outcome.status === "sent") {
         reply = copy.relaySent(name);
-        note = `[Pengguna menekan Kirim: pesan ke ${name} terkirim]`;
+        note = `[Pengguna menyetujui: pesan ke ${name} terkirim]`;
       } else if (outcome.status === "failed") {
         this.d.log.warn({ userId: user.id, relayId: id, error: outcome.error }, "pesan ke orang lain gagal terkirim");
         reply = copy.relayFailed(name, outcome.error);
-        note = `[Pengguna menekan Kirim, tapi pesan ke ${name} gagal terkirim: ${outcome.error}]`;
+        note = `[Pengguna menyetujui, tapi pesan ke ${name} gagal terkirim: ${outcome.error}]`;
       } else {
         reply = outcome.row?.status === "sent" ? copy.TEXT.relayAlreadySent : copy.TEXT.relayUnavailable;
-        note = "[Pengguna menekan tombol konfirmasi yang sudah tidak berlaku]";
+        note = "[Pengguna menjawab konfirmasi yang sudah tidak berlaku]";
       }
     }
     await this.d.outbox.text(user, reply, { raw: true });
@@ -834,7 +836,7 @@ export class Pipeline {
       case "profile": {
         const facts = await sql<{ fact: string }[]>`select fact from facts where user_id = ${user.id} order by id desc limit 30`;
         await this.replyStatic(user, note, profileSummary(user, facts.map((f) => f.fact)));
-        await this.d.outbox.buttons(user, "Mau mengulang perkenalan dari awal?", [copy.SETUP_BTN.restart]);
+        await this.d.outbox.buttons(user, "Kalau ada yang tidak cocok, bilang saja. Mau saya ulang perkenalannya dari awal?", [copy.SETUP_BTN.restart]);
         return;
       }
       case "account": {
@@ -863,7 +865,7 @@ export class Pipeline {
         lines.push(`Google: ⚠️ ${account.email ?? "akun"}, login kedaluwarsa.`);
         rows.push({ id: "conn:google:relogin", title: "🔄 Login ulang Google", description: "Sambungkan lagi akun yang sama" });
       } else {
-        lines.push(`Google: ✅ ${account.email ?? "terhubung"} — ${granted.map((s) => SERVICE_LABEL[s]).join(", ") || "tanpa layanan"}.`);
+        lines.push(`Google: ✅ ${account.email ?? "terhubung"}, untuk ${granted.map((s) => SERVICE_LABEL[s]).join(", ") || "belum ada layanan"}.`);
       }
       const missing = enabledServices().filter((s) => !granted.includes(s));
       if (!account && missing.length > 1) {
@@ -882,7 +884,7 @@ export class Pipeline {
       rows.push({ id: "conn:server", title: "🖥️ Tambah server", description: "Hubungkan server Linux Anda" });
     }
     const text = lines.join("\n");
-    if (rows.length) await this.d.outbox.list(user, `${text}\n\nPilih di bawah:`, "Pilih", rows.slice(0, 10));
+    if (rows.length) await this.d.outbox.list(user, `${text}\n\nMau hubungkan yang mana?`, "Pilih", rows.slice(0, 10));
     else await this.d.outbox.text(user, text, { raw: true });
     const model = await this.d.agent.modelFor(user).catch(() => null);
     if (model) await recordStaticExchange(user, model, "[Menu: koneksi]", text);
@@ -961,13 +963,13 @@ export class Pipeline {
     if (!yes) {
       const cancelled = await cancelAction(user.id, id);
       const text = cancelled ? copy.CONNECT_TEXT.actionCancelled : copy.CONNECT_TEXT.actionUnavailable;
-      return this.replyStatic(user, `[Pengguna menekan Batal${cancelled ? `: ${cancelled.kind} tidak dijalankan` : ""}]`, text);
+      return this.replyStatic(user, `[Pengguna membatalkan${cancelled ? `: ${cancelled.kind} tidak dijalankan` : ""}]`, text);
     }
     const action = await claimAction(user.id, id);
     if (!action) {
       const existing = await getAction(user.id, id);
       const text = existing?.status === "done" ? copy.CONNECT_TEXT.actionDone : copy.CONNECT_TEXT.actionUnavailable;
-      return this.replyStatic(user, "[Pengguna menekan tombol konfirmasi yang sudah tidak berlaku]", text);
+      return this.replyStatic(user, "[Pengguna menjawab konfirmasi yang sudah tidak berlaku]", text);
     }
     const outcome = isGoogleAction(action) ? await runAction(action, user) : await runServerAction(action, user);
     await finishAction(action.id, outcome.ok ? "done" : "failed", outcome.text);
@@ -1001,9 +1003,10 @@ export class Pipeline {
         return this.d.outbox.text(user, copy.SETUP.callName(own), { raw: true });
       }
       case "work":
-        return this.d.outbox.text(user, copy.SETUP.work, { raw: true });
+        return this.d.outbox.text(user, copy.SETUP.work(user.profile?.callName), { raw: true });
       case "connect":
-        return this.d.outbox.text(user, copy.SETUP.connect, { raw: true });
+        // Their answer about work was taken down, so say so before asking the next thing.
+        return this.d.outbox.text(user, copy.SETUP.connect(Boolean(user.profile?.work)), { raw: true });
     }
   }
 
