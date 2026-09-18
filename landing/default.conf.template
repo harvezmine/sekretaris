@@ -32,12 +32,16 @@ server {
         internal;
     }
 
-    location ~* \.(css|png)$ {
+    # A deploy changes the HTML and the stylesheet together. Cached separately they drift apart, and the page
+    # arrives as new markup wearing the old stylesheet, which looks broken until the cache expires. So both
+    # revalidate on every visit and come back as a 304 when nothing moved. Images keep a real cache: they change
+    # far less often, and og.png is fetched by crawlers rather than by the page itself.
+    location ~* \.(png|ico|svg|webmanifest)$ {
         expires 1h;
     }
 
     location / {
         try_files $uri $uri/ =404;
-        expires 5m;
+        expires -1;
     }
 }

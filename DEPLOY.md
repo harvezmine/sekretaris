@@ -415,6 +415,7 @@ diulang.
 | Share lokasi di WhatsApp tidak terbaca | `docker compose logs app \| grep "tidak terbaca"` menampilkan nama field dari Fonnte. Tanpa `location` di situ, minta pengguna mengetik *LOKASI* atau menempel link Google Maps. Lihat [docs/setup-maps.md](docs/setup-maps.md#lokasi-pengguna). |
 | `secretary.my.id` tidak terbuka atau 502 | Public hostname di tunnel harus `HTTP` → `landing:80` (bukan `localhost`). `docker compose ps landing` harus healthy. Lihat langkah 6C. |
 | Cloudflare menolak hostname `secretary.my.id` | Masih ada record DNS lama untuk `@` atau `www`. Hapus di DNS → Records, lalu tambahkan hostname lagi (langkah 6C). |
+| Landing tampak rusak tepat setelah deploy | Dulu HTML di-cache 5 menit sementara CSS satu jam, jadi halaman baru memakai gaya lama. Sekarang keduanya `Cache-Control: no-cache` dan divalidasi ulang (304). Kalau masih terlihat lama, itu cache browser Anda sendiri: muat ulang dengan Cmd/Ctrl+Shift+R. |
 | Tombol "Chat" di landing membuka WhatsApp tanpa tujuan | `LANDING_WA_NUMBER` di `.env` terisi nilai yang salah. Kosongkan untuk memakai nomor bawaan, lalu `docker compose up -d landing`. |
 | Perintah server tidak jalan | `SERVER_ACTION_ACCESS` di `.env` harus `all` (atau `admin` dengan nomor itu di `SERVER_ADMIN_NUMBERS`), dan servernya sudah terhubung. Riwayat eksekusi ada di tabel `server_runs`. |
 | Kontak Google tidak ketemu | People API belum diaktifkan di Google Cloud, atau scope `contacts.readonly` belum dicentang saat login. Ketik *KONEKSI* untuk login ulang. |
