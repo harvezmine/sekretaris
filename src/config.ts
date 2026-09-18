@@ -51,6 +51,13 @@ const schema = z
     SEARXNG_URL: z.string().default(""),
     TAVILY_API_KEY: z.string().default(""),
     WEB_SEARCH_MAX_RESULTS: z.coerce.number().int().min(1).max(20).default(6),
+    /** auto = Google Places when a key is set, OpenStreetMap otherwise. off turns place search off entirely. */
+    PLACES_PROVIDER: z.enum(["auto", "google", "osm", "off"]).default("auto"),
+    /** Google Places (server API key, not OAuth). Billed per search; leave empty to stay on OpenStreetMap. */
+    GOOGLE_MAPS_API_KEY: z.string().default(""),
+    PLACE_SEARCHES_PER_DAY: z.coerce.number().int().min(0).max(500).default(30),
+    OVERPASS_URL: z.string().default("https://overpass-api.de/api/interpreter"),
+    NOMINATIM_URL: z.string().default("https://nominatim.openstreetmap.org/search"),
     WEB_READ_MAX_CHARS: z.coerce.number().int().min(1000).max(50_000).default(12_000),
 
     GOOGLE_CLIENT_ID: z.string().default(""),

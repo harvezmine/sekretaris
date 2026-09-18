@@ -46,6 +46,8 @@ export interface UserProfile {
   /** HH:MM in the user's time zone. */
   briefingTime?: string;
   setupDoneAt?: string;
+  /** The last location the user shared in chat, used for "near me". Removed with the rest of their data. */
+  lastPlace?: { lat: number; lng: number; label?: string; at: string };
 }
 
 export async function getUser(id: string): Promise<UserRow | undefined> {

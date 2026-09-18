@@ -563,11 +563,15 @@ export class Pipeline {
           }
           break;
         }
-        case "location":
-          questions.push(
-            `[Lokasi dibagikan: ${[inbound.name, inbound.address].filter(Boolean).join(", ") || "tanpa nama"} (${inbound.latitude}, ${inbound.longitude})]`,
-          );
+        case "location": {
+          const label = [inbound.name, inbound.address].filter(Boolean).join(", ");
+          // Kept so "restoran terdekat" still works in the next message, and removed with the rest of their data.
+          await updateProfile(user.id, {
+            lastPlace: { lat: inbound.latitude, lng: inbound.longitude, ...(label ? { label } : {}), at: new Date().toISOString() },
+          });
+          questions.push(`[Lokasi dibagikan: ${label || "tanpa nama"} (${inbound.latitude}, ${inbound.longitude}). Tersimpan sebagai lokasi terakhir pengguna.]`);
           break;
+        }
         case "unsupported":
           if (inbound.type === "fonnte-empty") {
             replies.push(copy.attachmentMissing(uploadUrlFor(user.id)));

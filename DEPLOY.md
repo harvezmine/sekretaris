@@ -364,6 +364,7 @@ diulang.
 | `server-milo` gagal dicek | `docker compose ps dockerproxy` dan `ls -l /var/run/docker.sock`. |
 | Cek server pengguna: "tidak bisa dibuka; SERVER_KEY_SECRET mungkin berubah" | `SERVER_KEY_SECRET` di `.env` harus sama persis dengan milik Mac. Ambil lagi dari arsip backup (file `env` di dalamnya). |
 | Login Google: `redirect_uri_mismatch` | Redirect URI di Google Cloud harus persis `https://app.secretary.my.id/google/callback`, dan `PUBLIC_BASE_URL` harus `https://app.secretary.my.id`. |
+| "Carikan restoran terdekat" tidak jalan | Pengguna harus pernah membagikan lokasi untuk "terdekat". Tanpa `GOOGLE_MAPS_API_KEY`, sumbernya OpenStreetMap (gratis) dan tidak ada rating. Cek `PLACES_PROVIDER` dan lihat [docs/setup-maps.md](docs/setup-maps.md). |
 | Perintah server tidak jalan | `SERVER_ACTION_ACCESS` di `.env` harus `all` (atau `admin` dengan nomor itu di `SERVER_ADMIN_NUMBERS`), dan servernya sudah terhubung. Riwayat eksekusi ada di tabel `server_runs`. |
 | Kontak Google tidak ketemu | People API belum diaktifkan di Google Cloud, atau scope `contacts.readonly` belum dicentang saat login. Ketik *KONEKSI* untuk login ulang. |
 | Login Google: "Akses diblokir" | Gmail pengguna belum ditambahkan sebagai test user. |

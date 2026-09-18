@@ -14,6 +14,9 @@ Yang ada di POC ini:
 - **Server**: cek kondisi server pengguna, dan jalankan aksi yang mereka simpan sendiri (deploy, restart). Teks
   perintahnya selalu ditulis pengguna — AI hanya memanggilnya berdasarkan nama — dan setiap eksekusi menunggu
   tombol konfirmasi. Semua tercatat di `server_runs`.
+- **Tempat & navigasi**: cari restoran/SPBU/ATM terdekat, dan kirim link navigasi Maps. Sumbernya OpenStreetMap
+  (gratis, tanpa API key) atau Google Places kalau key-nya diisi. Link navigasinya selalu gratis. Lihat
+  [docs/setup-maps.md](docs/setup-maps.md).
 - **Google Docs & Sheets**: notulen atau draf surat ditulis jadi dokumen asli, dan hal yang perlu dicatat berulang
   (omzet, pengeluaran) masuk ke spreadsheet buatan Milo, satu baris tiap kali disebut. Keduanya memakai izin
   `drive.file` yang sudah ada, jadi Milo hanya menyentuh file buatannya sendiri.

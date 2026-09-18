@@ -34,6 +34,7 @@ import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/cli
 import { searchGoogleContacts } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { webHandlers, webInputs, webToolDefs } from "./webTools.js";
+import { DIRECTIONS_TOOL_DEF, mapsHandlers, mapsInputs, mapsToolDefs } from "./mapsTools.js";
 import { closeSessions } from "./session.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -128,6 +129,7 @@ export const TOOL_DEFS: BetaTool[] = (
         required: ["query"],
       },
     },
+    DIRECTIONS_TOOL_DEF,
     {
       name: "persona_set",
       description: [
@@ -317,8 +319,9 @@ export function toolsFor(user: UserRow): BetaTool[] {
   const messaging = messageSendFor(user.waId);
   const google = googleToolDefs();
   const web = webToolDefs();
-  if (!servers && !messaging && !google.length && !web.length) return TOOL_DEFS;
-  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${web.length ? "w" : ""}${google.map((t) => t.name).join(",")}`;
+  const maps = mapsToolDefs();
+  if (!servers && !messaging && !google.length && !web.length && !maps.length) return TOOL_DEFS;
+  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${web.length ? "w" : ""}${maps.length ? "p" : ""}${google.map((t) => t.name).join(",")}`;
   let tools = toolSets.get(key);
   if (!tools) {
     tools = [
@@ -327,6 +330,7 @@ export function toolsFor(user: UserRow): BetaTool[] {
       ...(messaging ? [MESSAGE_SEND_TOOL_DEF] : []),
       ...google,
       ...web,
+      ...maps,
     ].sort(byName);
     toolSets.set(key, tools);
   }
@@ -356,6 +360,7 @@ async function resolveRecipient(user: UserRow, contactId: number | undefined, ph
 const inputs = {
   ...googleInputs,
   ...webInputs,
+  ...mapsInputs,
   account_status: z.object({}).loose(),
   capture_read: z.object({
     id: z.coerce.number().int().positive(),
@@ -492,6 +497,7 @@ async function googleContactsReady(user: UserRow): Promise<boolean> {
 const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inputs)[K]>) => Promise<ToolOutcome> } = {
   ...googleHandlers,
   ...webHandlers,
+  ...mapsHandlers,
   async account_status({ user }) {
     const quota = await quotaState(user);
     const tz = user.timezone;
