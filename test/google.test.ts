@@ -554,7 +554,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.deepEqual(JSON.parse(invite.body).attendees, [{ email: "andi@vendor.co" }]);
     assert.match(last(u.waId).text!, /^✅ Acara dibuat dan undangan terkirim:\n.+Review kontrak.+\nMeet: https:\/\/meet\.google\.com/);
     await tap(u.waId, question!.buttons![0]!.id);
-    assert.equal(last(u.waId).text, "Itu sudah dilakukan sebelumnya.");
+    assert.equal(last(u.waId).text, "Yang itu sudah beres tadi.");
     assert.equal(fake.callsTo("/events", "POST").length, postsBefore + 1);
 
     await say(u.waId, 'tool calendar_delete {"event_id":"ev-vendor"}');
@@ -576,7 +576,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     const stale = out(u.waId).at(-1)!;
     await sql`update pending_actions set expires_at = now() - interval '1 minute' where user_id = ${u.id} and status = 'pending'`;
     await tap(u.waId, stale.buttons![0]!.id);
-    assert.match(last(u.waId).text!, /sudah tidak berlaku/);
+    assert.match(last(u.waId).text!, /sudah kedaluwarsa/);
     assert.equal((await lastAction(u.id)).status, "pending");
   });
 
@@ -651,12 +651,18 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.match(String(invalid.content), /tidak valid: andi/);
     assert.match(String((await runTool({ user: u }, "gmail_send", { body: "x" })).content), /Sebutkan penerima/);
 
-    await sql`update users set profile = profile || ${sql.json({ briefingTime: "07:00" })} where id = ${u.id}`;
+    const morning = new Date(`${today()}T07:05:00+07:00`);
+    await sql`
+      update users set profile = profile || ${sql.json({ routines: { morning: "07:00" }, setupDoneAt: new Date(morning.getTime() - 3 * 86_400_000).toISOString() })},
+        last_inbound_at = ${new Date(morning.getTime() - 3_600_000)}
+      where id = ${u.id}
+    `;
     fake.events = [{ id: "ev-pagi", status: "confirmed", summary: "Stand-up", start: { dateTime: `${today()}T23:30:00+07:00` }, end: { dateTime: `${today()}T23:45:00+07:00` } }];
-    await ctx.scheduler.sendBriefings(new Date(`${today()}T07:05:00+07:00`));
+    await ctx.scheduler.sendRoutines(morning);
     const briefing = out(u.waId).filter((e) => /Selamat pagi/.test(e.text ?? "")).at(-1)!.text!;
-    assert.match(briefing, /• 📅 23\.30–23\.45 — Stand-up/);
-    assert.match(briefing, /📧 \*Email penting belum dibaca\* \(1\):\n• Andi Pratama — Invoice September/);
+    assert.match(briefing, /Hari ini ada 23\.30-23\.45 Stand-up\./, "the calendar event is on the morning check-in");
+    assert.match(briefing, /Ada 1 email penting yang belum dibaca: Andi Pratama: Invoice September\./);
+    assert.doesNotMatch(briefing, /—/, "no em dashes in what the secretary writes");
   });
 
   test("drive: search, open into saved files, and save into a Milo folder", async () => {

@@ -760,8 +760,7 @@ export class Pipeline {
   // ---- quick actions ---------------------------------------------------------------------------------------------------
 
   private async showQuickMenu(user: UserRow): Promise<void> {
-    const name = user.assistantName ?? DEFAULT_ASSISTANT_NAME;
-    await this.d.outbox.list(user, copy.quickMenuIntro(name, user.profile?.callName), QUICK_MENU_LABEL, quickRows(user));
+    await this.d.outbox.list(user, copy.quickMenuIntro(user.profile?.callName), QUICK_MENU_LABEL, quickRows(user));
   }
 
   /** Static replies cost nothing; each is recorded so the model understands what the user answers next. */

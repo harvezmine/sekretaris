@@ -3,8 +3,11 @@ import { getUser, sql, type UserRow } from "../db/index.js";
 import { googleEnabled, servicesGranted } from "../google/client.js";
 import { connectUrlFor } from "../google/connect.js";
 import { BTN, googleExpired, trialNudge } from "../onboarding/copy.js";
+import type { Agent } from "../agent/run.js";
+import { recordStaticExchange } from "../agent/session.js";
 import { hasAccess, type Payments } from "../payments/service.js";
-import { briefingText, localNow } from "../profile/agenda.js";
+import { localNow } from "../profile/agenda.js";
+import { composeRoutine, dueRoutines, QUIET_BEFORE_MIN, ROUTINE_LABEL, routineFacts, type RoutineKind } from "../routines/routines.js";
 import { WhatsAppError } from "../wa/client.js";
 import type { Outbox } from "../wa/outbox.js";
 import { errorMessage, type Logger } from "../util.js";
@@ -12,9 +15,9 @@ import { scheduleNext, type ReminderRow } from "./store.js";
 
 const WINDOW_MS = 24 * 3_600_000 - 60_000;
 
-function insideWindow(user: UserRow, channelHasWindow: boolean): boolean {
+function insideWindow(user: UserRow, channelHasWindow: boolean, now = Date.now()): boolean {
   if (!channelHasWindow) return true;
-  return Boolean(user.lastInboundAt && Date.now() - user.lastInboundAt.getTime() < WINDOW_MS);
+  return Boolean(user.lastInboundAt && now - user.lastInboundAt.getTime() < WINDOW_MS);
 }
 
 /** Delivers due reminders and expires stale QR charges. Runs in-process; one instance per database. */
@@ -26,6 +29,7 @@ export class Scheduler {
     private readonly outbox: Outbox,
     private readonly log: Logger,
     private readonly payments?: Payments,
+    private readonly agent?: Agent,
   ) {}
 
   async start(intervalMs = 30_000): Promise<void> {
@@ -55,7 +59,7 @@ export class Scheduler {
         returning id, user_id, kind, text, fire_at, repeat, repeat_until, series_id
       `;
       for (const r of due) await this.deliver(r);
-      await this.sendBriefings();
+      await this.sendRoutines();
       await this.notifyExpiredGoogle();
     } catch (err) {
       this.log.error({ err }, "scheduler gagal");
@@ -65,37 +69,54 @@ export class Scheduler {
   }
 
   /**
-   * Morning agenda summaries. Each user gets at most one per local day, claimed before sending; a summary more than
-   * three hours late (the app was down) is skipped rather than sent in the afternoon.
+   * The check-ins the secretary sends on its own: morning, lunch and end of day. Each goes out at most once per
+   * local day, claimed before sending. It waits while the user is mid-conversation, is skipped rather than sent
+   * hours late, and stays quiet for the first hour after someone joins.
    */
-  async sendBriefings(now = new Date()): Promise<void> {
+  async sendRoutines(now = new Date()): Promise<void> {
     const candidates = await sql<UserRow[]>`
       select * from users
-      where profile ? 'briefingTime' and status in ('trialing', 'active') and state <> 'OPTED_OUT'
+      where status in ('trialing', 'active') and state = 'READY'
       order by id
       limit 500
     `;
     for (const user of candidates) {
-      const at = user.profile.briefingTime;
-      if (!at || !hasAccess(user, now)) continue;
+      if (!hasAccess(user, now)) continue;
+      const due = dueRoutines(user.profile, user.timezone, now);
+      if (!due.length) continue;
       const local = localNow(user.timezone, now);
-      if (user.briefingSentOn && user.briefingSentOn.toISOString().slice(0, 10) >= local.date) continue;
-      const [h, m] = at.split(":").map(Number);
-      const [nh, nm] = local.clock.split(":").map(Number);
-      const late = nh! * 60 + nm! - (h! * 60 + m!);
-      if (late < 0) continue;
-      const claimed = await sql`
-        update users set briefing_sent_on = ${local.date}::date
-        where id = ${user.id} and (briefing_sent_on is null or briefing_sent_on < ${local.date}::date)
-        returning id
-      `;
-      if (!claimed.length || late > 180) continue;
-      if (!insideWindow(user, this.outbox.wa.serviceWindow)) continue;
-      try {
-        await this.outbox.text(user, await briefingText(user, now), { raw: true });
-      } catch (err) {
-        this.log.warn({ err, userId: user.id }, "ringkasan pagi gagal dikirim");
+      const joined = Date.parse(user.profile?.setupDoneAt ?? "") || user.createdAt.getTime();
+      const justJoined = now.getTime() - joined < 60 * 60_000;
+      for (const d of due) {
+        const busy = user.lastInboundAt && now.getTime() - user.lastInboundAt.getTime() < QUIET_BEFORE_MIN * 60_000;
+        if (busy && !d.expired && !justJoined) continue;
+        const alreadyBriefed = d.kind === "morning" && user.briefingSentOn && user.briefingSentOn.toISOString().slice(0, 10) >= local.date;
+        const skip = d.expired || justJoined || Boolean(alreadyBriefed) || !insideWindow(user, this.outbox.wa.serviceWindow, now.getTime());
+        const claimed = await sql`
+          insert into routine_log (user_id, kind, on_date, sent) values (${user.id}, ${d.kind}, ${local.date}::date, ${!skip})
+          on conflict do nothing
+          returning 1
+        `;
+        if (!claimed.length || skip) continue;
+        await this.sendRoutine(user, d.kind, d.weekend, local.date, now);
       }
+    }
+  }
+
+  private async sendRoutine(user: UserRow, kind: RoutineKind, weekend: boolean, date: string, now: Date): Promise<void> {
+    const unsent = () => sql`update routine_log set sent = false where user_id = ${user.id} and kind = ${kind} and on_date = ${date}::date`;
+    try {
+      const facts = await routineFacts(user, kind, now);
+      // On a weekend the morning check-in only comes when there is actually something on.
+      if (weekend && kind === "morning" && !facts.today.length) return void (await unsent());
+      const { text, written } = await composeRoutine(kind, user, facts, { agent: this.agent, now });
+      await this.outbox.text(user, text, { raw: true });
+      const model = await this.agent?.modelFor(user).catch(() => null);
+      if (model) await recordStaticExchange(user, model, `[Sapaan otomatis ${ROUTINE_LABEL[kind]}]`, text);
+      if (!written) this.log.info({ userId: user.id, kind }, "sapaan otomatis memakai template");
+    } catch (err) {
+      await unsent().catch(() => {});
+      this.log.warn({ err, userId: user.id, kind }, "sapaan otomatis gagal dikirim");
     }
   }
 
@@ -179,7 +200,8 @@ export class Scheduler {
   }
 
   private async deliverReminder(r: ReminderRow, user: UserRow): Promise<void> {
-    const text = `⏰ *Pengingat*\n${r.text}`;
+    const who = user.profile?.callName;
+    const text = `⏰ ${who ? `${who}, ini` : "Ini"} pengingatnya:\n${r.text}`;
     const template = config.WA_REMINDER_TEMPLATE;
     try {
       if (insideWindow(user, this.outbox.wa.serviceWindow)) {

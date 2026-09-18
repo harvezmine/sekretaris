@@ -111,11 +111,11 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       assert.match(out.at(-1)!.text!, /\*1\.\* Langganan\n\*2\.\* Eksekutif\n\*3\.\* Punya Kode/);
 
       await fonnte(u, "punya kode");
-      assert.equal(last(u)!.text, "Silakan ketik kode undangan Anda.");
+      assert.equal(last(u)!.text, "Boleh, ketik kode undangannya di sini.");
       assert.equal((await userByWa(u))!.state, "AWAITING_CODE");
 
       await fonnte(u, "2");
-      assert.match(last(u)!.text!, /tidak dikenali/, "a bare number with no menu open is just text");
+      assert.match(last(u)!.text!, /Kodenya belum cocok/, "a bare number with no menu open is just text");
     });
 
     test("group messages and duplicate deliveries are ignored", async () => {
@@ -234,23 +234,23 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         );
         assert.match(
           confirm!.text!,
-          /Kirim pesan di atas ke \*6281233334444\*\? Konfirmasi berlaku 15 menit\.\n\nBalas dengan angka:\n\*1\.\* Kirim\n\*2\.\* Batal$/,
+          /Saya kirim ke \*6281233334444\* sekarang\? Tombolnya berlaku 15 menit\.\n\nBalas dengan angka:\n\*1\.\* Kirim\n\*2\.\* Batal$/,
         );
         assert.equal(sentTo(andi).length, 0, "nothing goes out before the owner confirms");
 
         await fonnte(owner, "1");
         assert.equal(sentTo(andi).length, 1);
         assert.equal(sentTo(andi)[0]!.text, preview!.text);
-        assert.match(last(owner)!.text!, /Terkirim ke \*6281233334444\*/);
+        assert.match(last(owner)!.text!, /Sudah terkirim ke \*6281233334444\*/);
         await sql`insert into messages (user_id, direction, kind, body, payload, processed)
                   values (${ownerRow.id}, 'out', 'interactive', 'lama', ${sql.json({ buttons: confirm!.buttons } as never)}, true)`;
         await fonnte(owner, "1");
         assert.equal(sentTo(andi).length, 1, "tapping an old confirmation again does not send twice");
-        assert.match(last(owner)!.text!, /sudah terkirim sebelumnya/);
+        assert.match(last(owner)!.text!, /sudah terkirim tadi/);
 
         await fonnte(andi, "Siap, saya datang", { name: "Andi" });
-        assert.equal(last(owner)!.text, "💬 *Balasan dari Andi* (6281233334444):\nSiap, saya datang");
-        assert.equal(last(andi)!.text, "Terima kasih, pesan Anda sudah saya teruskan ke Josh. — Milo");
+        assert.equal(last(owner)!.text, "💬 *Andi* membalas (6281233334444):\nSiap, saya datang");
+        assert.equal(last(andi)!.text, "Terima kasih, pesan Anda sudah saya sampaikan ke Josh.\n\nSalam,\nMilo");
         assert.equal((await userByWa(andi))!.state, "NEW", "the recipient is not onboarded");
         await fonnte(andi, "Tolong siapkan proyektor", { name: "Andi" });
         assert.match(last(owner)!.text!, /Tolong siapkan proyektor/);
@@ -272,7 +272,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         await fonnte(owner, "kirim ke 081233334444: Pak Andi, rapat pindah ke Jumat.");
         await sql`update relay_messages set expires_at = now() - interval '1 minute' where status = 'pending'`;
         await fonnte(owner, "kirim");
-        assert.match(last(owner)!.text!, /sudah tidak berlaku/);
+        assert.match(last(owner)!.text!, /sudah kedaluwarsa/);
         assert.equal(sentTo(andi).length, 2);
 
         config.MESSAGE_SEND_DAILY_LIMIT = 1;
@@ -315,7 +315,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       `;
       await sql`insert into reminders (user_id, kind, text, fire_at) values (${u!.id}, 'user', 'Bayar listrik', now() - interval '1 second')`;
       await ctx.scheduler.tick();
-      assert.equal(last(u!.waId)!.text, "⏰ *Pengingat*\nBayar listrik");
+      assert.equal(last(u!.waId)!.text, "⏰ Ini pengingatnya:\nBayar listrik");
     });
   });
 

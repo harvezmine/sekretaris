@@ -68,34 +68,34 @@ export const TEXT = {
   menuPrompt: "Pilih salah satu di bawah ini.",
   preboardFallback: "Kirim kode undangan Anda ke sini untuk mulai. Kalau belum punya, ketik *MENU* untuk lihat harga.",
   afterInfo: "Mau lanjut ke mana?",
-  codePrompt: "Silakan ketik kode undangan Anda.",
-  codeInvalid: "Kode itu tidak dikenali, sudah kedaluwarsa, atau sudah terpakai. Coba ketik lagi, atau pilih di bawah.",
+  codePrompt: "Boleh, ketik kode undangannya di sini.",
+  codeInvalid: "Kodenya belum cocok. Mungkin salah ketik, sudah kedaluwarsa, atau sudah dipakai. Coba sekali lagi?",
   codeGiveUp: "Kodenya belum cocok. Kalau belum punya kode, Anda tetap bisa berlangganan langsung.",
   trialUsed: "Masa coba untuk nomor ini sudah pernah dipakai. Anda bisa langsung berlangganan untuk lanjut.",
   executiveLead: "Terima kasih. Tim kami akan menghubungi Anda lewat WhatsApp ini dalam 1×24 jam untuk menyiapkan paket *Eksekutif*.",
-  awaitingPayment: "Kami masih menunggu pembayaran Anda. Scan QR di atas, atau pilih di bawah.",
-  paymentCancelled: "Pembayaran dibatalkan.",
+  awaitingPayment: "Pembayarannya belum masuk. QR-nya masih yang di atas, atau pilih di bawah.",
+  paymentCancelled: "Oke, pembayarannya saya batalkan.",
   optedOut: "Baik, Milo tidak akan mengirim pesan lagi. Ketik MULAI kapan saja untuk kembali.",
   deleteConfirm:
-    "Hapus *semua* data Anda dari Milo — percakapan, dokumen, catatan, kontak, dan pengingat? Ini tidak bisa dibatalkan.\n\nCatatan transaksi pembayaran tetap kami simpan karena diwajibkan aturan pajak, tanpa tautan ke percakapan Anda.",
+    "Hapus *semua* data Anda: percakapan, dokumen, catatan, kontak, dan pengingat? Ini tidak bisa dibatalkan.\n\nCatatan transaksi pembayaran tetap kami simpan karena diwajibkan aturan pajak, tanpa tautan ke percakapan Anda.",
   deleteCancelled: "Oke, tidak jadi dihapus.",
   deleted: "Semua data Anda sudah dihapus. Terima kasih sudah mencoba Milo.",
-  voiceDisabled: "Pesan suara belum aktif di versi ini — silakan ketik pesannya dulu.",
-  unsupported: "Jenis pesan ini belum bisa saya proses.",
-  relayUnavailable: "Konfirmasi itu sudah tidak berlaku. Minta saya menyusun pesannya lagi kalau masih perlu.",
-  relayAlreadySent: "Pesan itu sudah terkirim sebelumnya.",
-  failure: "Maaf, ada gangguan di sisi kami. Coba kirim lagi sebentar lagi.",
-  working: "Sebentar ya, masih saya kerjakan… ⏳",
+  voiceDisabled: "Pesan suara belum bisa saya dengarkan. Boleh diketik saja?",
+  unsupported: "Yang ini belum bisa saya buka. Boleh dikirim sebagai teks?",
+  relayUnavailable: "Tombol itu sudah kedaluwarsa. Kalau masih perlu, bilang saja, saya susun ulang pesannya.",
+  relayAlreadySent: "Yang itu sudah terkirim tadi.",
+  failure: "Maaf, barusan ada gangguan di tempat saya. Boleh kirim ulang sebentar lagi?",
+  working: "Sebentar ya, lagi saya kerjakan.",
   softMode:
     "Periode ini pemakaian Anda sudah cukup padat, jadi untuk sementara jawaban saya lebih ringkas. Pemakaian normal kembali di periode berikutnya.",
 };
 
 export function relayConfirm(who: string, minutes: number): string {
-  return `Kirim pesan di atas ke ${who}? Konfirmasi berlaku ${minutes} menit.`;
+  return `Saya kirim ke ${who} sekarang? Tombolnya berlaku ${minutes} menit.`;
 }
 
 export function relaySent(name: string): string {
-  return `✅ Terkirim ke *${name}*. Kalau dibalas, balasannya saya teruskan ke sini.`;
+  return `✅ Sudah terkirim ke *${name}*. Kalau dibalas, nanti saya teruskan ke sini.`;
 }
 
 export function relayCancelled(name: string): string {
@@ -103,15 +103,15 @@ export function relayCancelled(name: string): string {
 }
 
 export function relayFailed(name: string, error: string): string {
-  return `❌ Pesan ke *${name}* gagal terkirim (${error}). Coba lagi sebentar lagi.`;
+  return `Maaf, pesan ke *${name}* belum berhasil terkirim (${error}). Mau saya coba lagi?`;
 }
 
 export function relayReply(name: string, waId: string, body: string): string {
-  return `💬 *Balasan dari ${name}* (${waId}):\n${body}`;
+  return `💬 *${name}* membalas (${waId}):\n${body}`;
 }
 
 export function relayAck(assistantName: string, ownerName: string): string {
-  return `Terima kasih, pesan Anda sudah saya teruskan ke ${ownerName}. — ${assistantName}`;
+  return `Terima kasih, pesan Anda sudah saya sampaikan ke ${ownerName}.\n\nSalam,\n${assistantName}`;
 }
 
 export function uploadLink(url: string | undefined, hours: number): string {
@@ -162,13 +162,17 @@ export const SETUP_BTN = {
 } satisfies Record<string, Button>;
 
 export function setupDone(callName: string | undefined): string {
-  return `Siap${callName ? `, ${callName}` : ""}. Ada yang bisa saya bantu sekarang?`;
+  return [
+    `Siap${callName ? `, ${callName}` : ""}. Mulai sekarang, tiap pagi saya kabari agenda hari itu, siang saya ingatkan istirahat, dan sore saya bantu cek untuk besok. Kalau ada yang tidak perlu, bilang saja.`,
+    "",
+    "Ada yang bisa saya bantu sekarang?",
+  ].join("\n");
 }
 
 // ---- quick actions ------------------------------------------------------------------------------------------------------
 
-export function quickMenuIntro(assistantName: string, who: string | undefined): string {
-  return `Hai${who ? ` ${who}` : ""}, ada yang bisa ${assistantName} bantu? Pilih di bawah, atau langsung ketik/ucapkan permintaan Anda.`;
+export function quickMenuIntro(who: string | undefined): string {
+  return `Hai${who ? ` ${who}` : ""}. Mau dibantu apa? Pilih di bawah, atau langsung ketik saja.`;
 }
 
 // ---- connected accounts ---------------------------------------------------------------------------------------------
@@ -200,8 +204,8 @@ export const CONNECT_TEXT = {
   notConnected: "Akun Google belum terhubung.",
   server: "🖥️ Untuk menghubungkan server, kirim alamatnya, misalnya: _hubungkan server saya: user@alamat-ip port 22_. Saya balas dengan satu perintah untuk dipasang di server itu.",
   actionCancelled: "Oke, dibatalkan.",
-  actionUnavailable: "Konfirmasi itu sudah tidak berlaku. Minta saya menyiapkannya lagi kalau masih perlu.",
-  actionDone: "Itu sudah dilakukan sebelumnya.",
+  actionUnavailable: "Tombol itu sudah kedaluwarsa. Kalau masih perlu, bilang saja, saya siapkan lagi.",
+  actionDone: "Yang itu sudah beres tadi.",
 };
 
 export const SERVER_TEXT = {
@@ -293,7 +297,7 @@ export function pendiriAccepted(): string {
 
 export function accessExpired(endedAt: Date | null, timeZone: string): string {
   const when = endedAt ? ` pada ${formatDate(endedAt, timeZone)}` : "";
-  return `Masa aktif Milo Anda sudah berakhir${when}. Semua dokumen dan catatan Anda masih tersimpan — perpanjang untuk lanjut.`;
+  return `Masa aktif langganan Anda sudah berakhir${when}. Dokumen dan catatan Anda masih tersimpan semua, tinggal diperpanjang untuk lanjut.`;
 }
 
 export function accountSummary(plan: string | null, until: Date | null, timeZone: string): string {

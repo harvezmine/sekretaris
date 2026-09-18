@@ -105,7 +105,7 @@ describe("getting to know the user", () => {
   test("the model sees the profile, including how to address the user", () => {
     const lines = profilePromptLines(user({ profile: { callName: "Pak Josh", work: "kontraktor", answerStyle: "singkat", briefingTime: "06:30" } }));
     assert.match(lines[0]!, /^Address the user as: Pak Josh \(the user's choice/);
-    assert.match(lines.join("\n"), /Work or business: kontraktor\nAnswer length preference: short .+\nMorning agenda summary: daily at 06:30/);
+    assert.match(lines.join("\n"), /Work or business: kontraktor\nAnswer length preference: short .+\nCheck-ins you send on your own: morning 06:30, lunch 12:00 \(weekdays\), evening 17:30 \(weekdays\)/);
     assert.match(profilePromptLines(user()).join("\n"), /not set/);
     assert.deepEqual(localNow("Asia/Jakarta", new Date("2026-09-17T23:30:00Z")), { date: "2026-09-18", clock: "06:30", offset: "+07:00" });
   });

@@ -73,7 +73,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
     (userId) => pipeline.process(userId),
     (userId, err) => log.error({ err, userId }, "debounce handler gagal"),
   );
-  const scheduler = new Scheduler(outbox, log, payments);
+  const scheduler = new Scheduler(outbox, log, payments, agent);
 
   /** On channels without buttons, a numeric or title reply to the last menu becomes that button tap. */
   async function asButton(userId: string, inbound: Inbound): Promise<Inbound> {

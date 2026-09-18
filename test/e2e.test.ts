@@ -52,6 +52,8 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
   const agentCalls: { waId: string; text: string; softMode: boolean }[] = [];
 
   const briefCalls: { waId: string; system: string; last: string }[] = [];
+  /** What the fake model writes for each user's next check-in; other users' check-ins cannot take them. */
+  const routineReplies = new Map<string, string[]>();
 
   const fakeAgent = {
     async modelFor() {
@@ -60,6 +62,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     async brief(user: UserRow, system: string, messages: { role: string; content: string }[]) {
       const last = String(messages.at(-1)?.content ?? "");
       briefCalls.push({ waId: user.waId, system, last });
+      if (/on your own initiative/.test(system)) return { text: routineReplies.get(user.waId)?.shift() ?? "Halo dari sekretaris.", calls: [] };
       if (/langganan|bayar/i.test(last)) return { text: "Oke, ini QR-nya.", calls: ["start_checkout"] };
       return { text: "Milo itu asisten pribadi di WhatsApp.", calls: [] };
     },
@@ -171,10 +174,10 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     const [code] = await createCodes({ kind: "trial", count: 1, maxUses: 1, trialDays: 14, expiresInDays: 30, source: "uji" });
     await send(u, [text(u, "halo")]);
     await send(u, [button(u, "code")]);
-    assert.equal(lastOut(u)!.text, "Silakan ketik kode undangan Anda.");
+    assert.equal(lastOut(u)!.text, "Boleh, ketik kode undangannya di sini.");
 
     await send(u, [text(u, "SALAH-KODE")]);
-    assert.match(lastOut(u)!.text!, /tidak dikenali/);
+    assert.match(lastOut(u)!.text!, /Kodenya belum cocok/);
     assert.equal((await userByWa(u))!.state, "AWAITING_CODE");
 
     await send(u, [text(u, code!.code.toLowerCase())]);
@@ -252,7 +255,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
       values (${user!.id}, 'bypass', 'manual-ref-1', 'MILO-MANUAL-1', 'profesional', 500000, 'QR', now() + interval '20 minutes')
     `;
     await send(u, [text(u, "sudah bayar belum ya")]);
-    assert.match(lastOut(u)!.text!, /masih menunggu pembayaran/);
+    assert.match(lastOut(u)!.text!, /Pembayarannya belum masuk/);
     await send(u, [button(u, "resend_qr")]);
     assert.equal(lastOut(u)!.type, "image");
     await send(u, [button(u, "cancel_pay")]);
@@ -349,10 +352,10 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal(contact!.phone, "6281212345678");
 
     await send(u, [{ id: `wamid.v${++seq}`, from: u, timestamp: now(), type: "audio", audio: { id: "m-voice", voice: true } }]);
-    assert.match(lastOut(u)!.text!, /Pesan suara belum aktif/);
+    assert.match(lastOut(u)!.text!, /Pesan suara belum bisa saya dengarkan/);
 
     await send(u, [{ id: `wamid.s${++seq}`, from: u, timestamp: now(), type: "sticker", sticker: { id: "x" } }]);
-    assert.equal(lastOut(u)!.text, "Jenis pesan ini belum bisa saya proses.");
+    assert.equal(lastOut(u)!.text, "Yang ini belum bisa saya buka. Boleh dikirim sebagai teks?");
   });
 
   test("GAYA shows the persona menu without the model and passes the rest on", async () => {
@@ -410,7 +413,8 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, "nanti saja")]);
     const done = lastOut(u)!;
     assert.equal(done.type, "text", "no menu is pushed at the end");
-    assert.equal(done.text, "Siap, Pak Josh. Ada yang bisa saya bantu sekarang?");
+    assert.match(done.text!, /^Siap, Pak Josh\. Mulai sekarang, tiap pagi saya kabari agenda hari itu/);
+    assert.match(done.text!, /Kalau ada yang tidak perlu, bilang saja\.\n\nAda yang bisa saya bantu sekarang\?$/, "the check-ins are announced once, with the way out");
 
     const user = (await userByWa(u))!;
     assert.equal(user.state, "READY");
@@ -471,7 +475,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, "MENU")]);
     const menu = lastOut(u)!;
     assert.equal(menu.type, "list");
-    assert.match(menu.text!, /^Hai Pak Budi, ada yang bisa Milo bantu\?/);
+    assert.match(menu.text!, /^Hai Pak Budi\. Mau dibantu apa\?/);
     assert.deepEqual(
       menu.buttons!.map((b) => b.id),
       ["qa:agenda", "qa:reminder", "qa:file", "qa:message", "qa:style", "qa:profile", "qa:help", "qa:account"],
@@ -503,34 +507,84 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal(n, 10, "five static answers recorded so the model knows what the user saw");
   });
 
-  test("morning summaries go out once a day at the chosen time", async () => {
-    const early = await makeReadyUser("6281100000035");
-    const late = await makeReadyUser("6281100000036");
-    const off = await makeReadyUser("6281100000037");
-    await sql`update users set profile = ${sql.json({ callName: "Pak Andi", briefingTime: "07:00" })}, assistant_name = 'Nadia' where id = ${early.id}`;
-    await sql`update users set profile = ${sql.json({ briefingTime: "08:00" })} where id = ${late.id}`;
-    const day = isoInZone(new Date(), "Asia/Jakarta").slice(0, 10);
-    const at = (clock: string, plusDays = 0) => new Date(new Date(`${day}T${clock}:00+07:00`).getTime() + plusDays * 86_400_000);
-    await sql`insert into reminders (user_id, kind, text, fire_at) values (${early.id}, 'user', 'Presentasi investor', ${at("09:00")})`;
-    const count = (waId: string) => outFor(waId).filter((e) => /Selamat pagi/.test(e.text ?? "")).length;
+  test("the secretary checks in on its own through the working day, and knows when not to", async () => {
+    const jakarta = (d: Date) => isoInZone(d, "Asia/Jakarta").slice(0, 10);
+    const weekday = (date: string) => ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    // The next working day and the next Saturday, both inside a fresh 7-day trial.
+    let day = jakarta(new Date());
+    while (weekday(day) > 5) day = jakarta(new Date(Date.parse(`${day}T12:00:00+07:00`) + 86_400_000));
+    let saturday = day;
+    while (weekday(saturday) !== 6) saturday = jakarta(new Date(Date.parse(`${saturday}T12:00:00+07:00`) + 86_400_000));
+    const at = (clock: string, date = day) => new Date(`${date}T${clock}:00+07:00`);
+    const hoursBefore = (d: Date, h: number) => new Date(d.getTime() - h * 3_600_000);
 
-    await ctx.scheduler.sendBriefings(at("06:55"));
-    assert.equal(count(early.waId), 0);
-    await ctx.scheduler.sendBriefings(at("07:05"));
-    assert.equal(count(early.waId), 1);
-    const msg = lastOut(early.waId)!.text!;
-    assert.match(msg, /^☀️ Selamat pagi, Pak Andi!/);
-    assert.match(msg, /• 09\.00 — Presentasi investor/);
-    assert.match(msg, /— Nadia$/);
-    await ctx.scheduler.sendBriefings(at("07:30"));
-    assert.equal(count(early.waId), 1, "once per day");
-    assert.equal(count(late.waId), 0);
-    await ctx.scheduler.sendBriefings(at("11:30"));
-    assert.equal(count(late.waId), 0, "more than three hours late is skipped, not sent at noon");
-    await ctx.scheduler.sendBriefings(at("07:10", 1));
-    assert.equal(count(early.waId), 2, "the next morning");
-    assert.match(lastOut(early.waId)!.text!, /Hari ini belum ada agenda/);
-    assert.equal(count(off.waId), 0);
+    const settle = async (user: UserRow, profile: object, lastInbound: Date) => {
+      await sql`
+        update users set profile = ${sql.json({ setupDoneAt: hoursBefore(at("07:00"), 72).toISOString(), ...profile })},
+          last_inbound_at = ${lastInbound}, assistant_name = 'Nadia'
+        where id = ${user.id}
+      `;
+    };
+    const boss = await makeReadyUser("6281100000035");
+    const quiet = await makeReadyUser("6281100000036");
+    const chatty = await makeReadyUser("6281100000037");
+    await settle(boss, { callName: "Pak Andi" }, hoursBefore(at("07:00"), 12));
+    await settle(quiet, { routines: { morning: "off", lunch: "off", evening: "off" } }, hoursBefore(at("07:00"), 12));
+    await settle(chatty, {}, at("12:02"));
+    await sql`insert into reminders (user_id, kind, text, fire_at) values (${boss.id}, 'user', 'Presentasi investor', ${at("09:00")})`;
+    const checkIns = (waId: string) => outFor(waId).filter((e) => e.type === "text");
+    const before = { boss: checkIns(boss.waId).length, chatty: checkIns(chatty.waId).length };
+
+    // Morning, 07:30 by default, written in the assistant's voice from the real agenda.
+    routineReplies.set(boss.waId, ["Pagi, Pak Andi. Jam 09.00 ada presentasi investor. Ada rencana lain hari ini yang perlu saya catat?"]);
+    await ctx.scheduler.sendRoutines(at("07:20"));
+    assert.equal(checkIns(boss.waId).length, before.boss, "not before its time");
+    await ctx.scheduler.sendRoutines(at("07:35"));
+    assert.equal(lastOut(boss.waId)!.text, "Pagi, Pak Andi. Jam 09.00 ada presentasi investor. Ada rencana lain hari ini yang perlu saya catat?");
+    const prompt = briefCalls.findLast((c) => c.waId === boss.waId)!.system;
+    assert.match(prompt, /You are Nadia/);
+    assert.match(prompt, /09\.00 Presentasi investor/);
+    assert.match(prompt, /How to address them: Pak Andi/);
+    const [note] = await sql<{ content: { text: string }[] }[]>`
+      select t.content from transcript t join sessions s on s.id = t.session_id
+      where s.user_id = ${boss.id} and t.role = 'user' order by t.id desc limit 1
+    `;
+    assert.equal(note!.content[0]!.text, "[Sapaan otomatis pagi]", "a reply to the check-in has its context");
+    await ctx.scheduler.sendRoutines(at("08:00"));
+    assert.equal(checkIns(boss.waId).length, before.boss + 1, "once a day");
+
+    // A morning the app slept through is skipped, not sent at eleven.
+    const sleepy = await makeReadyUser("6281100000039");
+    await settle(sleepy, { routines: { lunch: "off", evening: "off" } }, hoursBefore(at("07:00"), 12));
+    await ctx.scheduler.sendRoutines(at("11:00"));
+    assert.equal(checkIns(sleepy.waId).length, 0, "three hours late is too late");
+
+    // Lunch: someone mid-conversation is left alone until they have been quiet for a while.
+    routineReplies.set(boss.waId, ["Sudah jam makan siang, Pak Andi. Jeda dulu sebentar, ya."]);
+    routineReplies.set(chatty.waId, ["Sudah siang. Jangan lupa makan, ya."]);
+    await ctx.scheduler.sendRoutines(at("12:05"));
+    assert.match(lastOut(boss.waId)!.text!, /Jeda dulu sebentar/);
+    assert.equal(checkIns(chatty.waId).length, before.chatty, "still chatting at 12.02");
+    await ctx.scheduler.sendRoutines(at("12:20"));
+    assert.equal(lastOut(chatty.waId)!.text, "Sudah siang. Jangan lupa makan, ya.");
+
+    // End of day: a time the agenda does not have is not trusted, and the plain version goes out instead.
+    routineReplies.set(boss.waId, ["Jangan lupa rapat jam 16.00 ya, Pak Andi."]);
+    await ctx.scheduler.sendRoutines(at("17:35"));
+    assert.equal(lastOut(boss.waId)!.text, "Hari kerja hampir selesai, Pak Andi. Besok belum ada agenda. Ada yang perlu saya ingatkan besok?");
+
+    assert.deepEqual(checkIns(quiet.waId).map((e) => e.text), [], "switched off means switched off");
+    const logged = await sql<{ kind: string; sent: boolean }[]>`
+      select kind, sent from routine_log where user_id = ${sleepy.id} and on_date = ${day}::date order by kind
+    `;
+    assert.deepEqual(logged.map((r) => [r.kind, r.sent]), [["morning", false]], "the skipped morning is recorded as not sent");
+
+    // Saturday: no lunch or end-of-day, and a morning only when something is actually on.
+    const beforeWeekend = checkIns(boss.waId).length;
+    await ctx.scheduler.sendRoutines(at("07:35", saturday));
+    await ctx.scheduler.sendRoutines(at("12:05", saturday));
+    await ctx.scheduler.sendRoutines(at("17:35", saturday));
+    assert.equal(checkIns(boss.waId).length, beforeWeekend, "a free Saturday stays quiet");
   });
 
   test("profile_update and fact_forget change what the model is told", async () => {
@@ -538,13 +592,18 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     let out = await runTool({ user }, "profile_update", { call_name: "Bu Rina", answer_style: "lengkap", morning_briefing: "6.15" });
     assert.ok(!out.isError, String(out.content));
     let fresh = (await userByWa(user.waId))!;
-    assert.deepEqual(fresh.profile, { callName: "Bu Rina", answerStyle: "lengkap", briefingTime: "06:15" });
+    assert.deepEqual(fresh.profile, { callName: "Bu Rina", answerStyle: "lengkap", routines: { morning: "06:15" } });
     assert.equal((await runTool({ user }, "profile_update", { morning_briefing: "besok" })).isError, true);
     assert.equal((await runTool({ user }, "profile_update", { call_name: "<script>" })).isError, true);
     assert.equal((await runTool({ user }, "profile_update", {})).isError, true);
-    await runTool({ user }, "profile_update", { morning_briefing: "off", answer_style: "standar" });
+    await runTool({ user }, "profile_update", { morning_briefing: "off", lunch_reminder: "13.00", answer_style: "standar" });
     fresh = (await userByWa(user.waId))!;
-    assert.deepEqual(fresh.profile, { callName: "Bu Rina" });
+    assert.deepEqual(fresh.profile, { callName: "Bu Rina", routines: { morning: "off", lunch: "13:00" } });
+    assert.match(await buildSnapshot(fresh), /Check-ins you send on your own: morning off, lunch 13:00 \(weekdays\), evening 17:30 \(weekdays\)/);
+    await runTool({ user }, "profile_update", { morning_briefing: "on" });
+    fresh = (await userByWa(user.waId))!;
+    assert.deepEqual(fresh.profile.routines, { lunch: "13:00" }, "on brings the default back");
+    assert.equal((await runTool({ user }, "profile_update", { evening_checkin: "sore" })).isError, true);
     assert.match(await buildSnapshot(fresh), /Address the user as: Bu Rina/);
 
     await sql`insert into facts (user_id, fact) values (${user.id}, 'Tidak minum kopi'), (${user.id}, 'Anak bernama Dita')`;
@@ -610,7 +669,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
         (${inWindow.id}, 'user', 'Nanti saja', now() + interval '1 hour')
     `;
     await ctx.scheduler.tick();
-    assert.equal(lastOut(inWindow.waId)!.text, "⏰ *Pengingat*\nTelepon Pak Andi");
+    assert.equal(lastOut(inWindow.waId)!.text, "⏰ Ini pengingatnya:\nTelepon Pak Andi");
     const rows = await sql<{ userId: string; status: string; error: string | null }[]>`
       select user_id, status, error from reminders where user_id in (${inWindow.id}, ${stale.id}, ${trial.id}) order by id
     `;

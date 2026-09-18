@@ -98,15 +98,19 @@ export class Agent {
     user: UserRow,
     system: string,
     messages: MessageParam[],
-    opts: { tools?: Anthropic.Beta.BetaTool[]; maxTokens?: number } = {},
-  ): Promise<{ text: string; calls: string[] }> {
+    opts: { tools?: Anthropic.Beta.BetaTool[]; maxTokens?: number; kind?: string } = {},
+  ): Promise<{ text: string; calls: string[]; stopReason: string | null }> {
     const model = await this.modelFor(user);
     const calledAt = new Date();
+    // Thinking models spend part of max_tokens before the first visible word, so the budget is generous and the
+    // effort low; a reply that still ran out (stopReason "max_tokens") is cut off and callers must not send it.
     const response = await this.client(providerFor(model)).beta.messages.create({
       model,
-      max_tokens: opts.maxTokens ?? 400,
+      max_tokens: opts.maxTokens ?? 2000,
       system,
       messages,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" },
       ...(opts.tools?.length ? { tools: opts.tools } : {}),
     });
     for (const attempt of billedAttempts(response, model)) {
@@ -114,7 +118,7 @@ export class Agent {
       const u = attempt.usage;
       await sql`
         insert into usage_ledger (user_id, kind, model, input_tokens, cache_write_5m, cache_write_1h, cache_read, output_tokens, cost_usd)
-        values (${user.id}, 'preboard', ${attempt.model}, ${u.input}, ${u.cacheWrite5m}, ${u.cacheWrite1h}, ${u.cacheRead}, ${u.output}, ${cost})
+        values (${user.id}, ${opts.kind ?? "preboard"}, ${attempt.model}, ${u.input}, ${u.cacheWrite5m}, ${u.cacheWrite1h}, ${u.cacheRead}, ${u.output}, ${cost})
       `;
     }
     return {
@@ -124,6 +128,7 @@ export class Agent {
         .join("\n")
         .trim(),
       calls: response.content.filter((b) => b.type === "tool_use").map((b) => b.name),
+      stopReason: response.stop_reason,
     };
   }
 

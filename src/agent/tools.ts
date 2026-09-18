@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "../config.js";
-import { sql, type UserRow } from "../db/index.js";
+import { getUser, sql, type UserRow } from "../db/index.js";
 import {
   DEFAULT_ASSISTANT_NAME,
   findPersona,
@@ -30,6 +30,7 @@ import { errorMessage, formatDate, formatDateTime, normalizePhone } from "../uti
 import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../relay/service.js";
 import { uploadUrlFor } from "../uploads/links.js";
 import { normalizeCallName, normalizeWork, parseClock, updateProfile } from "../profile/profile.js";
+import type { RoutineKind } from "../routines/routines.js";
 import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
 import { searchGoogleContacts } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
@@ -148,14 +149,16 @@ export const TOOL_DEFS: BetaTool[] = (
     {
       name: "profile_update",
       description:
-        "Save how the user wants you to work with them. Give only the fields they changed. answer_style: singkat, lengkap, or standar to clear. morning_briefing: HH:MM in their time zone for a daily agenda summary, or off. The change applies from your next reply; confirm it briefly.",
+        "Save how the user wants you to work with them. Give only the fields they changed. answer_style: singkat, lengkap, or standar to clear. The three check-ins you send on your own (morning agenda, lunch break on weekdays, end-of-day on weekdays) take HH:MM in their time zone to move them, off to stop them, or on for the default time. The change applies from your next reply; confirm it briefly.",
       input_schema: {
         type: "object",
         properties: {
           call_name: { type: "string", description: "How to address the user, e.g. Pak Josh, Bu Rina, Bos." },
           work: { type: "string", description: "Their business or job, in their words." },
           answer_style: { type: "string", enum: ["singkat", "lengkap", "standar"] },
-          morning_briefing: { type: "string", description: "HH:MM, or off." },
+          morning_briefing: { type: "string", description: "Morning check-in with the day's agenda: HH:MM, on, or off. Default 07:30." },
+          lunch_reminder: { type: "string", description: "Weekday nudge to break for lunch: HH:MM, on, or off. Default 12:00." },
+          evening_checkin: { type: "string", description: "Weekday end-of-day look at tomorrow: HH:MM, on, or off. Default 17:30." },
         },
       },
     },
@@ -385,6 +388,8 @@ const inputs = {
     work: z.string().max(300).optional(),
     answer_style: z.enum(["singkat", "lengkap", "standar"]).optional(),
     morning_briefing: z.string().max(20).optional(),
+    lunch_reminder: z.string().max(20).optional(),
+    evening_checkin: z.string().max(20).optional(),
   }),
   message_send: z.object({
     text: z.string().min(1).max(1500),
@@ -669,14 +674,28 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
       patch.work = work;
     }
     if (input.answer_style) patch.answerStyle = input.answer_style === "standar" ? null : input.answer_style;
-    if (input.morning_briefing !== undefined) {
-      if (/^(off|mati|tidak|stop)$/i.test(input.morning_briefing.trim())) {
-        patch.briefingTime = null;
-      } else {
-        const time = parseClock(input.morning_briefing);
-        if (!time) return fail("Jam ringkasan pagi harus berformat HH:MM, misalnya 07:00, atau off.");
-        patch.briefingTime = time;
+    // Read fresh: an earlier call in the same turn may already have changed them.
+    const routines = { ...((await getUser(user.id))?.profile?.routines ?? {}) };
+    const fields: [RoutineKind, string | undefined, string][] = [
+      ["morning", input.morning_briefing, "sapaan pagi"],
+      ["lunch", input.lunch_reminder, "pengingat makan siang"],
+      ["evening", input.evening_checkin, "sapaan sore"],
+    ];
+    for (const [kind, value, label] of fields) {
+      if (value === undefined) continue;
+      const v = value.trim();
+      if (/^(off|mati|tidak|stop|jangan)$/i.test(v)) routines[kind] = "off";
+      else if (/^(on|nyala|aktif|ya)$/i.test(v)) delete routines[kind];
+      else {
+        const time = parseClock(v);
+        if (!time) return fail(`Jam ${label} harus berformat HH:MM, misalnya 07:00, atau on/off.`);
+        routines[kind] = time;
       }
+    }
+    if (fields.some(([, value]) => value !== undefined)) {
+      patch.routines = routines;
+      // The old morning setting stops mattering once the morning check-in has its own.
+      if (input.morning_briefing !== undefined) patch.briefingTime = null;
     }
     if (!Object.keys(patch).length) return fail("Tidak ada yang diubah.");
     const profile = await updateProfile(user.id, patch);

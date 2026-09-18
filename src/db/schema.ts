@@ -278,4 +278,13 @@ create table if not exists server_runs (
   created_at   timestamptz not null default now()
 );
 create index if not exists server_runs_user_idx on server_runs (user_id, id desc);
+
+create table if not exists routine_log (
+  user_id  bigint not null references users(id) on delete cascade,
+  kind     text not null,
+  on_date  date not null,
+  sent     boolean not null default true,
+  at       timestamptz not null default now(),
+  primary key (user_id, kind, on_date)
+);
 `;

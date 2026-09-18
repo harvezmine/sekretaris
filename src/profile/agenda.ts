@@ -63,14 +63,14 @@ function eventEntries(events: CalendarEvent[], timeZone: string, now: Date): Ent
   }));
 }
 
-interface CalendarRead {
+export interface CalendarRead {
   today: CalendarEvent[];
   tomorrow: CalendarEvent[];
   note?: string;
 }
 
 /** Undefined when the user has no calendar connected; a note when it is connected but unreadable. */
-async function calendarDays(user: UserRow, now: Date): Promise<CalendarRead | undefined> {
+export async function calendarDays(user: UserRow, now: Date): Promise<CalendarRead | undefined> {
   if (!googleEnabled()) return undefined;
   const account = await getAccount(user.id);
   if (!account?.scopes.includes(SCOPE.calendar)) return undefined;
@@ -113,7 +113,7 @@ export async function agendaText(user: UserRow, now = new Date()): Promise<strin
   return lines.join("\n");
 }
 
-async function importantMail(user: UserRow): Promise<string[]> {
+export async function importantMail(user: UserRow): Promise<string[]> {
   if (!googleEnabled()) return [];
   const account = await getAccount(user.id);
   if (account?.status !== "active" || !account.scopes.includes(SCOPE.gmailRead)) return [];

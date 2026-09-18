@@ -46,6 +46,8 @@ export interface UserProfile {
   /** HH:MM in the user's time zone. */
   briefingTime?: string;
   setupDoneAt?: string;
+  /** Check-ins the secretary sends on its own: "HH:MM", or "off". A missing entry means the default time. */
+  routines?: Partial<Record<"morning" | "lunch" | "evening", string>>;
   /** The last location the user shared in chat, used for "near me". Removed with the rest of their data. */
   lastPlace?: { lat: number; lng: number; label?: string; at: string };
 }

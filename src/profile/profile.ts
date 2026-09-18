@@ -1,3 +1,4 @@
+import { ROUTINE_KINDS, ROUTINE_LABEL, routineTime } from "../routines/routines.js";
 import { sql, type UserProfile, type UserRow } from "../db/index.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona } from "../persona/catalog.js";
 
@@ -68,7 +69,7 @@ export function profilePromptLines(user: UserRow): string[] {
           ? "detailed (fuller explanations and options are welcome)"
           : "not set (keep it brief by default)"
     }`,
-    `Morning agenda summary: ${p.briefingTime ? `daily at ${p.briefingTime}` : "off"}`,
+    `Check-ins you send on your own: ${routineSummary(p, "en")}. When they ask you to stop, move or bring one back, use profile_update.`,
   ];
 }
 
@@ -81,7 +82,7 @@ export function profileSummary(user: UserRow, facts: string[]): string {
     `• Panggilan: ${p.callName ?? "_belum diatur_"}`,
     `• Pekerjaan/usaha: ${p.work ?? "_belum diatur_"}`,
     `• Jawaban: ${styleLabel(p.answerStyle)}`,
-    `• Ringkasan agenda pagi: ${p.briefingTime ? `jam ${clockLabel(p.briefingTime)}` : "mati"}`,
+    `• Sapaan otomatis: ${routineSummary(p, "id")}`,
     `• Asisten: *${user.assistantName ?? DEFAULT_ASSISTANT_NAME}*, gaya ${persona ? `${persona.label} (${persona.gender})` : "standar"}`,
   ];
   if (facts.length) {
@@ -90,7 +91,18 @@ export function profileSummary(user: UserRow, facts: string[]): string {
   }
   lines.push(
     "",
-    "Ubah kapan saja dengan kalimat biasa, misalnya _panggil saya Pak Josh_, _jawab lebih singkat_, atau _ringkasan pagi jam 6_. Minta _lupakan …_ untuk menghapus sesuatu yang saya ingat.",
+    "Ubah kapan saja dengan kalimat biasa, misalnya _panggil saya Pak Josh_, _jawab lebih singkat_, _sapaan pagi jam 6_, atau _tidak usah ingatkan makan siang_. Minta _lupakan …_ untuk menghapus sesuatu yang saya ingat.",
   );
   return lines.join("\n");
+}
+
+/** "pagi 07.30, siang 12.00 (hari kerja), sore mati" for the user; the English form goes to the model. */
+export function routineSummary(p: UserProfile, lang: "id" | "en"): string {
+  const parts = ROUTINE_KINDS.map((kind) => {
+    const at = routineTime(p, kind);
+    const weekdays = kind === "morning" ? "" : lang === "id" ? " (hari kerja)" : " (weekdays)";
+    if (lang === "en") return `${kind} ${at ?? "off"}${at ? weekdays : ""}`;
+    return `${ROUTINE_LABEL[kind]} ${at ? clockLabel(at) + weekdays : "mati"}`;
+  });
+  return parts.join(", ");
 }
