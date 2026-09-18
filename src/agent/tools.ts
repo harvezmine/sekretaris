@@ -21,7 +21,9 @@ import {
   resolveServer,
   summarizeServers,
 } from "../servers/userServers.js";
-import { formatDate, formatDateTime, normalizePhone, waMeLink } from "../util.js";
+import { cancelReminder, createReminder, listReminders } from "../reminders/store.js";
+import { alignFirst, formatRepeat, parseRepeat, RepeatError, type Repeat } from "../reminders/repeat.js";
+import { errorMessage, formatDate, formatDateTime, normalizePhone } from "../util.js";
 import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../relay/service.js";
 import { uploadUrlFor } from "../uploads/links.js";
 import { normalizeCallName, normalizeWork, parseClock, updateProfile } from "../profile/profile.js";
@@ -121,20 +123,6 @@ export const TOOL_DEFS: BetaTool[] = (
       },
     },
     {
-      name: "message_draft",
-      description:
-        "Create a tap-to-send WhatsApp link for a message the user will send themselves to another person. Give contact_id or phone; with neither, the user picks the recipient when they tap.",
-      input_schema: {
-        type: "object",
-        properties: {
-          text: { type: "string", description: "The message, written in the user's own voice." },
-          contact_id: { type: "integer" },
-          phone: { type: "string" },
-        },
-        required: ["text"],
-      },
-    },
-    {
       name: "persona_set",
       description: [
         "Change your own name and/or personality when the user asks, e.g. after they reply to the GAYA menu (\"nomor 11, namanya Yuki\") or say \"ganti nama kamu jadi Sari\". Give only what they want to change; the other stays as is. persona=standar returns to the standard style.",
@@ -165,7 +153,7 @@ export const TOOL_DEFS: BetaTool[] = (
     },
     {
       name: "reminder_cancel",
-      description: "Cancel a scheduled reminder by id.",
+      description: "Cancel a scheduled reminder by id. Cancelling a repeating reminder stops the whole series.",
       input_schema: {
         type: "object",
         properties: { id: { type: "integer" } },
@@ -174,19 +162,25 @@ export const TOOL_DEFS: BetaTool[] = (
     },
     {
       name: "reminder_create",
-      description: "Schedule a WhatsApp reminder for the user.",
+      description: "Schedule a WhatsApp reminder for the user, once or repeating.",
       input_schema: {
         type: "object",
         properties: {
           text: { type: "string", description: "What to remind the user about, phrased as the reminder they will read." },
-          at: { type: "string", description: "ISO 8601 timestamp with UTC offset, e.g. 2026-09-18T09:00:00+07:00." },
+          at: { type: "string", description: "First occurrence, ISO 8601 with UTC offset, e.g. 2026-09-18T09:00:00+07:00." },
+          repeat: {
+            type: "string",
+            description:
+              "Only for a repeating reminder. An RRULE: FREQ=DAILY|WEEKLY|MONTHLY|YEARLY, with optional INTERVAL, BYDAY (weekly, MO TU WE TH FR SA SU), BYMONTHDAY, BYMONTH. Examples: FREQ=DAILY; FREQ=WEEKLY;BYDAY=MO,TH; FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR; FREQ=WEEKLY;INTERVAL=2;BYDAY=FR; FREQ=MONTHLY;BYMONTHDAY=25; FREQ=YEARLY. Every occurrence keeps the time of day of the first one.",
+          },
+          until: { type: "string", description: "Optional last day of a repeating reminder, ISO 8601 with UTC offset." },
         },
         required: ["text", "at"],
       },
     },
     {
       name: "reminder_list",
-      description: "List the user's upcoming reminders.",
+      description: "List the user's upcoming reminders, including how each repeating one repeats.",
       input_schema: { type: "object", properties: {} },
     },
     {
@@ -362,17 +356,17 @@ const inputs = {
     contact_id: z.coerce.number().int().positive().optional(),
     phone: z.string().max(40).optional(),
   }),
-  message_draft: z.object({
-    text: z.string().min(1).max(3000),
-    contact_id: z.coerce.number().int().positive().optional(),
-    phone: z.string().max(40).optional(),
-  }),
   persona_set: z.object({
     persona: z.string().max(40).optional(),
     name: z.string().max(60).optional(),
   }),
   reminder_cancel: z.object({ id: z.coerce.number().int().positive() }),
-  reminder_create: z.object({ text: z.string().min(1).max(500), at: z.string().min(10).max(40) }),
+  reminder_create: z.object({
+    text: z.string().min(1).max(500),
+    at: z.string().min(10).max(40),
+    repeat: z.string().max(120).optional(),
+    until: z.string().min(10).max(40).optional(),
+  }),
   reminder_list: z.object({}).loose(),
   upload_link: z.object({}).loose(),
   server_add: z.object({
@@ -617,17 +611,6 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
     return ok({ saved: profile, note: "Berlaku mulai balasan berikutnya." });
   },
 
-  async message_draft({ user }, { text, contact_id, phone }) {
-    let recipient: Recipient | undefined;
-    if (contact_id || phone) {
-      const resolved = await resolveRecipient(user, contact_id, phone);
-      if (typeof resolved === "string") return fail(resolved);
-      recipient = resolved;
-    }
-    const link = recipient ? waMeLink(recipient.to, text) : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    return ok({ to: recipient?.name ?? recipient?.to ?? "(pengguna memilih penerima)", link, text });
-  },
-
   async message_send({ user }, { text, contact_id, phone }) {
     if (!messageSendFor(user.waId)) return fail("Mengirim pesan langsung belum tersedia untuk pengguna ini. Pakai message_draft.");
     const recipient = await resolveRecipient(user, contact_id, phone);
@@ -679,37 +662,62 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
   },
 
   async reminder_cancel({ user }, { id }) {
-    const rows = await sql`
-      update reminders set status = 'cancelled'
-      where id = ${id} and user_id = ${user.id} and status = 'scheduled' and kind = 'user'
-      returning id
-    `;
-    return rows.length ? ok(`Pengingat #${id} dibatalkan.`) : fail(`Tidak ada pengingat aktif #${id}.`);
+    const result = await cancelReminder(user, id);
+    if (!result.cancelled) return fail(`Tidak ada pengingat aktif #${id}.`);
+    return ok(result.repeat ? `Pengingat berulang #${id} dihentikan, termasuk jadwal berikutnya.` : `Pengingat #${id} dibatalkan.`);
   },
 
-  async reminder_create({ user }, { text, at }) {
+  async reminder_create({ user }, { text, at, repeat, until }) {
     if (!/([zZ]|[+-]\d{2}:?\d{2})$/.test(at.trim())) {
       return fail("Waktu harus ISO 8601 lengkap dengan offset zona waktu, mis. 2026-09-18T09:00:00+07:00.");
     }
-    const fireAt = new Date(at);
+    let fireAt = new Date(at);
     if (Number.isNaN(fireAt.getTime())) return fail(`Waktu "${at}" tidak bisa dibaca.`);
+
+    let rule: Repeat | undefined;
+    let stopAt: Date | undefined;
+    if (repeat) {
+      try {
+        const parsed = parseRepeat(repeat);
+        rule = parsed.rule;
+        stopAt = parsed.until;
+      } catch (err) {
+        return fail(err instanceof RepeatError ? err.message : errorMessage(err));
+      }
+      const aligned = alignFirst(rule, fireAt, user.timezone);
+      if (!aligned) return fail("Pengulangan itu tidak pernah jatuh pada tanggal mana pun.");
+      fireAt = aligned;
+    }
+    if (until) {
+      const end = new Date(until);
+      if (Number.isNaN(end.getTime())) return fail(`Batas akhir "${until}" tidak bisa dibaca.`);
+      stopAt = end;
+    }
+
     const now = Date.now();
     if (fireAt.getTime() < now + 30_000) return fail("Waktu pengingat sudah lewat atau terlalu dekat.");
-    if (fireAt.getTime() > now + 366 * 86_400_000) return fail("Pengingat maksimal satu tahun ke depan.");
-    const [row] = await sql<{ id: string }[]>`
-      insert into reminders (user_id, kind, text, fire_at) values (${user.id}, 'user', ${text}, ${fireAt}) returning id
-    `;
-    return ok(`Pengingat #${row?.id} dijadwalkan: ${formatDateTime(fireAt, user.timezone)}.`);
+    if (!rule && fireAt.getTime() > now + 366 * 86_400_000) return fail("Pengingat sekali jalan maksimal satu tahun ke depan.");
+    if (stopAt && stopAt.getTime() < fireAt.getTime()) return fail("Batas akhir pengulangan jatuh sebelum pengingat pertama.");
+
+    const created = await createReminder(user, { text, fireAt, ...(rule ? { rule } : {}), ...(stopAt ? { until: stopAt } : {}) });
+    const when = formatDateTime(fireAt, user.timezone);
+    if (!rule) return ok(`Pengingat #${created.id} dijadwalkan: ${when}.`);
+    const ends = stopAt ? `, sampai ${formatDate(stopAt, user.timezone)}` : "";
+    return ok(`Pengingat berulang #${created.id} dijadwalkan ${created.label}${ends}. Yang pertama: ${when}.`);
   },
 
   async reminder_list({ user }) {
-    const rows = await sql<{ id: string; text: string; fireAt: Date }[]>`
-      select id, text, fire_at from reminders
-      where user_id = ${user.id} and status = 'scheduled' and kind = 'user'
-      order by fire_at limit 20
-    `;
+    const rows = await listReminders(user);
     if (!rows.length) return ok("Tidak ada pengingat yang dijadwalkan.");
-    return ok(rows.map((r) => ({ id: Number(r.id), when: formatDateTime(r.fireAt, user.timezone), text: r.text })));
+    return ok(
+      rows.map((r) => ({
+        id: Number(r.id),
+        when: formatDateTime(r.fireAt, user.timezone),
+        text: r.text,
+        ...(r.repeat ? { repeat: formatRepeat(parseRepeat(r.repeat).rule, r.fireAt, user.timezone) } : {}),
+        ...(r.repeatUntil ? { until: formatDate(r.repeatUntil, user.timezone) } : {}),
+      })),
+    );
   },
 
   async upload_link({ user }) {

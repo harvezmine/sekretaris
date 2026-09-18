@@ -149,7 +149,7 @@ Cek:
 docker compose ps                                   # db healthy, app healthy, dockerproxy running
 chmod 600 .env
 git status --short                                  # harus kosong (kalau tidak, laporkan)
-grep -E '^(COMPOSE_PROFILES|PUBLIC_BASE_URL|LOCAL_PORT|SERVER_ACCESS|WA_PROVIDER|WA_DRY_RUN)=' .env
+grep -E '^(COMPOSE_PROFILES|PUBLIC_BASE_URL|LOCAL_PORT|SERVER_ACCESS|SERVER_ADMIN_NUMBERS|MESSAGE_SEND_ACCESS|WA_PROVIDER|WA_DRY_RUN)=' .env
 grep -cE '^SERVER_KEY_SECRET=.{32,}' .env           # harus 1
 [ -d servers/keys ] && sudo chown -R 1000 servers/keys && chmod 700 servers/keys && chmod 600 servers/keys/*
 ```
@@ -365,5 +365,6 @@ diulang.
 | Cek server pengguna: "tidak bisa dibuka; SERVER_KEY_SECRET mungkin berubah" | `SERVER_KEY_SECRET` di `.env` harus sama persis dengan milik Mac. Ambil lagi dari arsip backup (file `env` di dalamnya). |
 | Login Google: `redirect_uri_mismatch` | Redirect URI di Google Cloud harus persis `https://app.secretary.my.id/google/callback`, dan `PUBLIC_BASE_URL` harus `https://app.secretary.my.id`. |
 | Login Google: "Akses diblokir" | Gmail pengguna belum ditambahkan sebagai test user. |
+| Milo membalas dengan link wa.me, bukan mengirim sendiri | `docker compose exec app node dist/cli.js status <nomor pengguna>`. Baris "Kirim ke orang lain" harus AKTIF. Kalau MATI: isi `MESSAGE_SEND_ACCESS=all`, atau tambahkan nomor itu ke `SERVER_ADMIN_NUMBERS`, lalu `docker compose up -d app`. |
 | Pencarian internet gagal | `docker compose logs searxng --tail 20`. Mesin pencari kadang membatasi; isi `TAVILY_API_KEY` sebagai cadangan, atau kosongkan `SEARXNG_URL` untuk mematikan fitur. |
 | Port bentrok | Ganti `LOCAL_PORT`, lalu `docker compose up -d app`. |

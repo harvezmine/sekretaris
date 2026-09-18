@@ -72,10 +72,6 @@ export function normalizePhone(raw: string): string | null {
   return digits.length >= 8 && digits.length <= 15 ? digits : null;
 }
 
-export function waMeLink(phone: string, text: string): string {
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-}
-
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);
 }

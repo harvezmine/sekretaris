@@ -144,6 +144,11 @@ alter table users add column if not exists briefing_sent_on date;
 alter table users add column if not exists persona text;
 alter table sessions add column if not exists closed_at timestamptz;
 
+alter table reminders add column if not exists repeat text;
+alter table reminders add column if not exists repeat_until timestamptz;
+alter table reminders add column if not exists series_id bigint;
+create index if not exists reminders_series_idx on reminders (series_id) where status = 'scheduled';
+
 create table if not exists relay_messages (
   id            bigserial primary key,
   owner_id      bigint not null references users(id) on delete cascade,

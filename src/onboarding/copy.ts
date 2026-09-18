@@ -19,23 +19,13 @@ export const MENU_NEW: Button[] = [BTN.code, BTN.price, BTN.faq];
 export const MENU_RETURNING: Button[] = [BTN.subscribe, BTN.code, BTN.faq];
 export const MENU_PRICING: Button[] = [BTN.subscribe, BTN.executive, BTN.code];
 
-/** Sent with reply buttons, so it must stay within WhatsApp's 1024-character limit. */
+/** The first thing a stranger sees. Two lines: who this is, and what to do next. Nothing about features. */
 export function welcome(name: string | null): string {
-  const hello = name ? `Halo ${name} 👋` : "Halo 👋";
   return [
-    `${hello} Saya *Milo*, asisten pribadi Anda di WhatsApp. Cukup chat seperti ke sekretaris, saya yang urus.`,
+    `Halo${name ? ` ${name}` : ""} 👋 Saya Milo, asisten pribadi lewat WhatsApp.`,
+    "Punya kode undangan? Kirim saja ke sini. Kalau mau tanya-tanya dulu, silakan.",
     "",
-    "📅 *Agenda & pengingat*: \"ingetin besok jam 9 telepon Pak Andi\", plus ringkasan agenda tiap pagi",
-    `📄 *Dokumen & foto*: ${directAttachments() ? "kirim" : "unggah"} PDF atau foto, lalu tanya isinya`,
-    "✉️ *Pesan ke orang lain*: saya susunkan dengan rapi",
-    "🧠 *Ingat hal penting*: klien, preferensi, kebiasaan Anda",
-    ...(config.GOOGLE_CLIENT_ID ? ["🔗 *Google*: kalender, Gmail, dan Drive Anda"] : []),
-    "🎭 *Asisten sesuai selera*: nama dan kepribadian pilihan Anda, dari formal sampai gaya anime",
-    ...(config.SERVER_ACCESS === "all" ? ["🖥️ *Cek server*: kondisi server dan error aplikasi"] : []),
-    "",
-    `${directAttachments() ? "Ketik atau kirim pesan suara" : "Ketik saja permintaan Anda"} kapan saja. Ketik *MENU* untuk pilihan cepat.`,
-    "",
-    "_Dengan melanjutkan, Anda setuju Milo menyimpan nomor dan percakapan ini. Ketik HAPUS kapan saja untuk menghapus data Anda._",
+    "_Dengan lanjut chat, Anda setuju Milo menyimpan nomor dan percakapan ini. Ketik HAPUS kapan saja untuk menghapusnya._",
   ].join("\n");
 }
 
@@ -75,7 +65,8 @@ export const FAQ = [
 ].join("\n");
 
 export const TEXT = {
-  menuPrompt: "Untuk mulai, pilih salah satu di bawah ini.",
+  menuPrompt: "Pilih salah satu di bawah ini.",
+  preboardFallback: "Kirim kode undangan Anda ke sini untuk mulai. Kalau belum punya, ketik *MENU* untuk lihat harga.",
   afterInfo: "Mau lanjut ke mana?",
   codePrompt: "Silakan ketik kode undangan Anda.",
   codeInvalid: "Kode itu tidak dikenali, sudah kedaluwarsa, atau sudah terpakai. Coba ketik lagi, atau pilih di bawah.",
@@ -112,7 +103,7 @@ export function relayCancelled(name: string): string {
 }
 
 export function relayFailed(name: string, error: string): string {
-  return `❌ Pesan ke *${name}* gagal terkirim (${error}). Coba lagi sebentar lagi, atau minta saya membuat link agar Anda kirim sendiri.`;
+  return `❌ Pesan ke *${name}* gagal terkirim (${error}). Coba lagi sebentar lagi.`;
 }
 
 export function relayReply(name: string, waId: string, body: string): string {
@@ -133,12 +124,17 @@ export function uploadLink(url: string | undefined, hours: number): string {
   ].join("\n");
 }
 
+/** A shared contact card that never arrived, or arrived as a file Milo cannot open. */
+export const CONTACT_CARD_MISSING =
+  "👤 Kartu kontaknya belum bisa saya baca di nomor ini. Ketik saja nama dan nomornya — misalnya _simpan kontak Andi 0812-3456-7890, dia PM saya_ — langsung saya simpan.";
+
 export function attachmentMissing(url: string | undefined): string {
   return [
-    "📎 File, foto, atau pesan suara yang dikirim langsung di WhatsApp belum bisa saya terima di nomor ini, termasuk keterangannya.",
+    "📎 File, foto, kartu kontak, atau pesan suara yang dikirim langsung di WhatsApp belum bisa saya terima di nomor ini, termasuk keterangannya.",
     url
       ? `Kirim lewat link ini, dan tulis pertanyaannya (misalnya _tolong rangkum_) di kolom yang tersedia:\n${url}\n\n_Link pribadi, berlaku ${config.UPLOAD_LINK_HOURS} jam._`
       : "Ketik *FILE* untuk mendapatkan link pengiriman file.",
+    "Kalau tadi kartu kontak: ketik nama dan nomornya di sini, saya simpan.",
   ].join("\n\n");
 }
 
@@ -153,43 +149,20 @@ export function paidActivated(planLabel: string, until: Date, timeZone: string):
 // ---- getting to know the user -----------------------------------------------------------------------------------------
 
 export const SETUP = {
-  intro: (total: number) =>
-    `Supaya bantuan saya pas untuk Anda, kita kenalan dulu, ya: *${total} pertanyaan singkat*. Setiap pertanyaan bisa dilewati (ketik *lewati*), dan semuanya bisa diubah nanti.`,
-  callName: (hasName: boolean, total: number) =>
-    `*1/${total}* · Mau saya panggil apa?\nContoh: _Pak Josh_, _Bu Rina_, _Kak Dimas_, atau _Bos_.${hasName ? "" : " Ketik saja panggilannya."}`,
-  work: (total: number) =>
-    `*2/${total}* · Apa usaha atau pekerjaan Anda?\nContoh: _punya 3 cabang kedai kopi_, _direktur kontraktor_, _dokter gigi_. Ini membantu saya memahami konteks permintaan Anda.`,
-  personaIntro: (total: number) =>
-    `*3/${total}* · Pilih kepribadian asisten Anda. Balas dengan *angka*, atau *lewati* untuk gaya standar.`,
-  assistantName: (suggested: string | undefined) =>
-    `Mau kasih saya nama?${suggested ? ` Nama yang cocok untuk gaya ini: *${suggested}*.` : ""} Ketik nama pilihan Anda, atau pilih di bawah.`,
-  answerStyle: (total: number) => `*4/${total}* · Suka jawaban seperti apa?`,
-  briefing: (total: number) =>
-    `*5/${total}* · Mau saya kirimi *ringkasan agenda setiap pagi*?\nPilih di bawah, atau ketik jam lain, misalnya _06.30_.`,
-  connect: (total: number) =>
-    `*${total}/${total}* · Hubungkan akun supaya saya bisa membaca jadwal, email, dan dokumen Anda. Pilih di bawah, atau ketik *lewati*.`,
-  retryCallName: "Panggilan itu terlalu panjang atau berisi simbol. Coba yang singkat, misalnya _Pak Josh_, atau ketik *lewati*.",
-  retryWork: "Tolong ceritakan singkat saja (maksimal 200 huruf), atau ketik *lewati*.",
-  retryPersona: "Balas dengan angka 1–14, atau ketik *lewati*.",
-  retryAssistantName: "Nama itu belum bisa dipakai. Pakai huruf dan angka saja (maks. 30), atau pilih di bawah.",
-  retryBriefing: "Jam itu belum saya pahami. Ketik misalnya _07.00_, atau pilih di bawah.",
-  paused: "Oke, perkenalannya saya jeda dulu. Lanjutkan kapan saja lewat *MENU* → Profil.",
+  callName: (name: string | undefined) => `Sebelum mulai — saya panggil Anda apa?${name ? ` ${name} juga boleh.` : ""}`,
+  work: "Oke. Sehari-hari Anda kerja apa? Biar saya nyambung kalau Anda cerita soal kerjaan.",
+  connect: "Terakhir: mau saya sambungkan ke Google Anda (kalender, email, Drive)? Kalau mau, saya kirim linknya.",
+  retryCallName: "Panggilan yang lebih singkat, ya — misalnya Pak Josh atau Bos.",
+  retryWork: "Singkat saja, satu kalimat.",
+  paused: "Oke, kenalannya nanti saja.",
 };
 
 export const SETUP_BTN = {
-  skip: { id: "setup:skip", title: "Lewati" },
-  callBos: { id: "setup:call:bos", title: "Bos" },
-  keepMilo: { id: "setup:name:keep", title: "Tetap Milo" },
-  styleShort: { id: "setup:style:singkat", title: "Singkat & padat" },
-  styleLong: { id: "setup:style:lengkap", title: "Lengkap & detail" },
-  briefing7: { id: "setup:brief:07:00", title: "Ya, jam 07.00" },
-  briefing8: { id: "setup:brief:08:00", title: "Ya, jam 08.00" },
-  briefingOff: { id: "setup:brief:off", title: "Tidak usah" },
   restart: { id: "setup:restart", title: "Atur ulang profil" },
 } satisfies Record<string, Button>;
 
-export function setupDone(lines: string[]): string {
-  return ["🎉 Beres, kita sudah kenalan! Ini yang saya catat:", ...lines, "", "Ubah kapan saja lewat *MENU* → Profil, atau cukup bilang ke saya."].join("\n");
+export function setupDone(callName: string | undefined): string {
+  return `Siap${callName ? `, ${callName}` : ""}. Ada yang bisa saya bantu sekarang?`;
 }
 
 // ---- quick actions ------------------------------------------------------------------------------------------------------
@@ -232,19 +205,20 @@ export const CONNECT_TEXT = {
 };
 
 export const QUICK_PROMPTS = {
-  reminder: "⏰ Mau diingatkan apa, dan kapan?\nContoh: _ingetin besok jam 9 telepon Pak Andi_, atau _30 menit lagi angkat jemuran_.",
+  reminder:
+    "⏰ Mau diingatkan apa, dan kapan?\nContoh: _ingetin besok jam 9 telepon Pak Andi_, _30 menit lagi angkat jemuran_, atau _tiap tanggal 25 ingetin bayar gaji_.",
   message: "✉️ Mau kirim pesan ke siapa, dan isinya apa?\nContoh: _kabari Pak Andi 0812-xxxx, rapat jadi jam 3_. Bagikan kartu kontaknya kalau belum tersimpan.",
   server: "🖥️ Mau cek apa di server?\nContoh: _server saya aman?_, _ada error apa di aplikasi saya?_, atau _hubungkan server saya: user@alamat-ip port 22_.",
 };
 
-export function helpText(opts: { attachments: boolean; messaging: boolean; servers: boolean; google?: boolean }): string {
+export function helpText(opts: { attachments: boolean; servers: boolean; google?: boolean }): string {
   return [
     "💡 *Contoh yang bisa Anda minta*",
     "",
     "*Agenda & pengingat*",
     "• _ingetin besok jam 9 rapat dengan vendor_",
-    "• _agenda saya hari ini apa?_",
-    "• _batalkan pengingat rapat vendor_",
+    "• _tiap Senin jam 8 ingetin setor laporan mingguan_",
+    "• _agenda saya hari ini apa?_ · _batalkan pengingat rapat vendor_",
     "",
     "*Dokumen & catatan*",
     opts.attachments ? "• kirim PDF/foto, lalu _poin pentingnya apa?_" : "• ketik *FILE*, unggah PDF/foto, lalu _poin pentingnya apa?_",
@@ -253,7 +227,7 @@ export function helpText(opts: { attachments: boolean; messaging: boolean; serve
     "",
     "*Orang & pesan*",
     "• bagikan kartu kontak, lalu _ini PM saya_",
-    opts.messaging ? "• _kabari PM saya, laporan dikirim besok_ (saya kirim setelah Anda setujui)" : "• _buatkan pesan ke PM saya, laporan dikirim besok_",
+    "• _kabari PM saya, laporan dikirim besok_ (saya yang kirim, setelah Anda setujui)",
     "",
     "*Tentang Anda*",
     "• _panggil saya Pak Josh_ · _jawab lebih singkat_",

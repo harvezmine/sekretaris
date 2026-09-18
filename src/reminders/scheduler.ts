@@ -8,14 +8,7 @@ import { briefingText, localNow } from "../profile/agenda.js";
 import { WhatsAppError } from "../wa/client.js";
 import type { Outbox } from "../wa/outbox.js";
 import { errorMessage, type Logger } from "../util.js";
-
-interface ReminderRow {
-  id: string;
-  userId: string;
-  kind: "user" | "trial_nudge";
-  text: string;
-  fireAt: Date;
-}
+import { scheduleNext, type ReminderRow } from "./store.js";
 
 const WINDOW_MS = 24 * 3_600_000 - 60_000;
 
@@ -59,7 +52,7 @@ export class Scheduler {
           select id from reminders where status = 'scheduled' and fire_at <= now()
           order by fire_at limit 25 for update skip locked
         )
-        returning id, user_id, kind, text, fire_at
+        returning id, user_id, kind, text, fire_at, repeat, repeat_until, series_id
       `;
       for (const r of due) await this.deliver(r);
       await this.sendBriefings();
@@ -134,36 +127,58 @@ export class Scheduler {
   private async deliver(r: ReminderRow): Promise<void> {
     const user = await getUser(r.userId);
     if (!user || user.status === "opted_out" || user.status === "blocked") return this.finish(r.id, "cancelled");
-
-    if (r.kind === "trial_nudge") {
-      if (user.status !== "trialing" || !user.trialEndsAt) return this.finish(r.id, "cancelled");
-      if (!insideWindow(user, this.outbox.wa.serviceWindow)) return this.finish(r.id, "failed", "di luar jendela 24 jam; nudge masa coba butuh template");
-      const [stats] = await sql<{ files: string; reminders: string; answers: string }[]>`
-        select
-          (select count(*) from captures where user_id = ${user.id}) as files,
-          (select count(*) from reminders where user_id = ${user.id} and kind = 'user' and status = 'sent') as reminders,
-          (select count(*) from agent_runs where user_id = ${user.id} and error is null) as answers
-      `;
+    if (r.kind !== "trial_nudge") {
       try {
-        await this.outbox.buttons(
-          user,
-          trialNudge(
-            {
-              endsAt: user.trialEndsAt,
-              files: Number(stats?.files ?? 0),
-              reminders: Number(stats?.reminders ?? 0),
-              answers: Number(stats?.answers ?? 0),
-            },
-            user.timezone,
-          ),
-          [BTN.subscribe, BTN.price],
-        );
-        return this.finish(r.id, "sent");
-      } catch (err) {
-        return this.finish(r.id, "failed", errorMessage(err));
+        await this.deliverReminder(r, user);
+      } finally {
+        await this.queueNext(r, user);
       }
+      return;
     }
+    return this.deliverNudge(r, user);
+  }
 
+  private async deliverNudge(r: ReminderRow, user: UserRow): Promise<void> {
+    if (user.status !== "trialing" || !user.trialEndsAt) return this.finish(r.id, "cancelled");
+    if (!insideWindow(user, this.outbox.wa.serviceWindow)) return this.finish(r.id, "failed", "di luar jendela 24 jam; nudge masa coba butuh template");
+    const [stats] = await sql<{ files: string; reminders: string; answers: string }[]>`
+      select
+        (select count(*) from captures where user_id = ${user.id}) as files,
+        (select count(*) from reminders where user_id = ${user.id} and kind = 'user' and status = 'sent') as reminders,
+        (select count(*) from agent_runs where user_id = ${user.id} and error is null) as answers
+    `;
+    try {
+      await this.outbox.buttons(
+        user,
+        trialNudge(
+          {
+            endsAt: user.trialEndsAt,
+            files: Number(stats?.files ?? 0),
+            reminders: Number(stats?.reminders ?? 0),
+            answers: Number(stats?.answers ?? 0),
+          },
+          user.timezone,
+        ),
+        [BTN.subscribe, BTN.price],
+      );
+      return this.finish(r.id, "sent");
+    } catch (err) {
+      return this.finish(r.id, "failed", errorMessage(err));
+    }
+  }
+
+  /** A repeating reminder queues its next occurrence even when this one failed, so one hiccup does not end the series. */
+  private async queueNext(r: ReminderRow, user: UserRow): Promise<void> {
+    if (!r.repeat) return;
+    try {
+      const next = await scheduleNext(r, user);
+      this.log.info({ reminderId: r.id, next: next?.toISOString() ?? null }, next ? "pengingat berulang dijadwalkan lagi" : "pengingat berulang selesai");
+    } catch (err) {
+      this.log.warn({ err, reminderId: r.id, repeat: r.repeat }, "jadwal pengingat berulang berikutnya gagal dibuat");
+    }
+  }
+
+  private async deliverReminder(r: ReminderRow, user: UserRow): Promise<void> {
     const text = `⏰ *Pengingat*\n${r.text}`;
     const template = config.WA_REMINDER_TEMPLATE;
     try {

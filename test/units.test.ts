@@ -7,7 +7,7 @@ import { parseModelWeights, pickModel, providerFor, requestExtras } from "../src
 import { sanitizeForEcho } from "../src/agent/run.ts";
 import { Debouncer } from "../src/debounce.ts";
 import { looksLikeCode, normalizeCode } from "../src/onboarding/codes.ts";
-import { isoInZone, normalizePhone, waMeLink } from "../src/util.ts";
+import { isoInZone, normalizePhone } from "../src/util.ts";
 import { parseWebhook } from "../src/wa/inbound.ts";
 import { verifySignature } from "../src/wa/verify.ts";
 
@@ -71,7 +71,6 @@ test("phone numbers normalize to WhatsApp form", () => {
   assert.equal(normalizePhone("81234567890"), "6281234567890");
   assert.equal(normalizePhone("0065 9123 4567"), "6591234567");
   assert.equal(normalizePhone("123"), null);
-  assert.equal(waMeLink("628123", "Halo Pak & Bu"), "https://wa.me/628123?text=Halo%20Pak%20%26%20Bu");
 });
 
 test("ISO timestamps carry the zone offset", () => {

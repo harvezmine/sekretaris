@@ -43,7 +43,7 @@ const schema = z
     UPLOAD_MAX_MB: z.coerce.number().int().min(1).max(100).default(25),
     UPLOAD_LINK_HOURS: z.coerce.number().int().min(1).max(168).default(24),
 
-    MESSAGE_SEND_ACCESS: z.enum(["off", "admin", "all"]).default("admin"),
+    MESSAGE_SEND_ACCESS: z.enum(["off", "admin", "all"]).default("all"),
     MESSAGE_SEND_DAILY_LIMIT: z.coerce.number().int().min(0).max(500).default(20),
     RELAY_REPLY_HOURS: z.coerce.number().int().min(1).max(720).default(72),
 

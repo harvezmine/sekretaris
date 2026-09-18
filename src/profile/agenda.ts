@@ -21,12 +21,13 @@ export interface AgendaItem {
   fireAt: Date;
   text: string;
   status: string;
+  repeat: string | null;
 }
 
 export async function agendaFor(user: UserRow, plusDays = 0, now = new Date()): Promise<AgendaItem[]> {
   const { start, end } = dayBounds(user.timezone, now, plusDays);
   return sql<AgendaItem[]>`
-    select fire_at, text, status from reminders
+    select fire_at, text, status, repeat from reminders
     where user_id = ${user.id} and kind = 'user' and status in ('scheduled', 'sending', 'sent')
       and fire_at >= ${start} and fire_at < ${end}
     order by fire_at
@@ -49,7 +50,7 @@ function reminderEntries(items: AgendaItem[], timeZone: string, now: Date, icons
     return {
       at: i.fireAt,
       sort: i.fireAt.getTime(),
-      line: `• ${icons ? "⏰ " : ""}${timeFmt(i.fireAt, timeZone)} — ${i.text}${done ? " _(sudah lewat)_" : ""}`,
+      line: `• ${icons ? "⏰ " : ""}${timeFmt(i.fireAt, timeZone)} — ${i.text}${i.repeat ? " 🔁" : ""}${done ? " _(sudah lewat)_" : ""}`,
     };
   });
 }

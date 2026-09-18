@@ -90,6 +90,43 @@ export class Agent {
     return model;
   }
 
+  /**
+   * One bounded call outside the assistant session, for people who do not have access yet: no transcript, no
+   * caching, few tools, short answer. Cost is still recorded so preboarding chatter is visible in the ledger.
+   */
+  async brief(
+    user: UserRow,
+    system: string,
+    messages: MessageParam[],
+    opts: { tools?: Anthropic.Beta.BetaTool[]; maxTokens?: number } = {},
+  ): Promise<{ text: string; calls: string[] }> {
+    const model = await this.modelFor(user);
+    const calledAt = new Date();
+    const response = await this.client(providerFor(model)).beta.messages.create({
+      model,
+      max_tokens: opts.maxTokens ?? 400,
+      system,
+      messages,
+      ...(opts.tools?.length ? { tools: opts.tools } : {}),
+    });
+    for (const attempt of billedAttempts(response, model)) {
+      const cost = llmCostUsd(attempt.model, attempt.usage, calledAt);
+      const u = attempt.usage;
+      await sql`
+        insert into usage_ledger (user_id, kind, model, input_tokens, cache_write_5m, cache_write_1h, cache_read, output_tokens, cost_usd)
+        values (${user.id}, 'preboard', ${attempt.model}, ${u.input}, ${u.cacheWrite5m}, ${u.cacheWrite1h}, ${u.cacheRead}, ${u.output}, ${cost})
+      `;
+    }
+    return {
+      text: response.content
+        .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+        .trim(),
+      calls: response.content.filter((b) => b.type === "tool_use").map((b) => b.name),
+    };
+  }
+
   async run(user: UserRow, turnText: string, opts: { softMode: boolean }): Promise<AgentResult> {
     const model = await this.modelFor(user);
     const provider = providerFor(model);

@@ -1,12 +1,10 @@
 import type { UserRow } from "../db/index.js";
-import { DEFAULT_ASSISTANT_NAME, findPersona, PERSONAS, type Persona } from "../persona/catalog.js";
-import { clockLabel, normalizeCallName, styleLabel, type UserProfile } from "../profile/profile.js";
 import { messageSendFor } from "../relay/service.js";
 import { serverToolsFor } from "../servers/registry.js";
 import { enabledServices, googleEnabled, type GoogleService } from "../google/client.js";
 import { directAttachments } from "../uploads/links.js";
 import type { Button } from "../wa/client.js";
-import { helpText, SETUP_BTN } from "./copy.js";
+import { helpText } from "./copy.js";
 
 // ---- quick actions ------------------------------------------------------------------------------------------------------
 
@@ -61,7 +59,6 @@ export function quickRows(user: Pick<UserRow, "waId">): Button[] {
 export function helpFor(user: Pick<UserRow, "waId">): string {
   return helpText({
     attachments: directAttachments(),
-    messaging: messageSendFor(user.waId),
     servers: serverToolsFor(user.waId),
     google: googleEnabled(),
   });
@@ -84,7 +81,7 @@ export function keywordAction(text: string): QuickAction | undefined {
 
 // ---- getting to know the user -------------------------------------------------------------------------------------------
 
-export const SETUP_ORDER = ["callName", "work", "persona", "assistantName", "answerStyle", "briefing", "connect"] as const;
+export const SETUP_ORDER = ["callName", "work", "connect"] as const;
 export type SetupStep = (typeof SETUP_ORDER)[number];
 
 export function isSetupStep(value: unknown): value is SetupStep {
@@ -96,26 +93,12 @@ export function withConnectStep(user: Pick<UserRow, "waId">): boolean {
   return googleEnabled() || serverToolsFor(user.waId);
 }
 
-export function setupTotal(user: Pick<UserRow, "waId">): number {
-  return withConnectStep(user) ? 6 : 5;
-}
-
 export function nextStep(step: SetupStep, connect = false): SetupStep | undefined {
   const next = SETUP_ORDER[SETUP_ORDER.indexOf(step) + 1];
   return next === "connect" && !connect ? undefined : next;
 }
 
 export type ConnectChoice = GoogleService | "google" | "server";
-
-export function connectRows(user: Pick<UserRow, "waId">): Button[] {
-  const services = googleEnabled() ? enabledServices() : [];
-  return [
-    ...(services.length > 1 ? [{ id: "conn:google:all", title: "🔗 Semua akun Google", description: "Kalender, Gmail, dan Drive sekaligus" }] : []),
-    ...services.map((s) => CONNECT_ROWS[s]),
-    ...(serverToolsFor(user.waId) ? [{ id: "conn:server", title: "🖥️ Server", description: "Cek kondisi server dan error aplikasi" }] : []),
-    { id: "setup:skip", title: "Nanti saja", description: "Bisa dihubungkan kapan saja lewat MENU" },
-  ];
-}
 
 export const CONNECT_ROWS: Record<GoogleService, Button> = {
   calendar: { id: "conn:google:calendar", title: "📅 Google Kalender", description: "Agenda, jadwal, dan undangan rapat" },
@@ -133,6 +116,11 @@ export function parseConnectChoice(text: string): ConnectChoice | undefined {
   return undefined;
 }
 
+/** The ways people say yes in a chat, so setup does not need buttons to be answerable. */
+export function isYes(text: string): boolean {
+  return /^(ya|iya|iyaa+|yes|y|ok|oke|okay|okey|boleh|mau|sip|siap|silakan|silahkan|ayo|gas|bisa|lanjut|setuju)\b/i.test(text.trim());
+}
+
 export const SKIP = /^(lewati|skip|nanti|nanti saja|tidak|tidak usah|ga|gak|nggak|enggak|ga usah|gak usah|-)$/i;
 export const FINISH = /^(selesai|sudah|udah|cukup)$/i;
 
@@ -144,53 +132,10 @@ export function looksLikeRequest(text: string, step: SetupStep): boolean {
   const words = text.trim().split(/\s+/).length;
   switch (step) {
     case "callName":
-    case "assistantName":
       return words > 4;
     case "work":
       return words > 30;
     default:
       return words > 6;
   }
-}
-
-export function parsePersonaChoice(text: string): Persona | "standard" | undefined {
-  const t = text.trim().toLowerCase();
-  if (/^(standar|standard|biasa|default)$/.test(t)) return "standard";
-  const digits = /^(?:no\.?|nomor|nomer|angka)?\s*(\d{1,2})$/.exec(t);
-  if (digits) return PERSONAS.find((p) => p.number === Number(digits[1]));
-  return PERSONAS.find((p) => p.id === t.replace(/\s+/g, "-") || p.label.toLowerCase() === t);
-}
-
-export function parseAnswerStyle(text: string): UserProfile["answerStyle"] | undefined {
-  const t = text.trim().toLowerCase();
-  if (/^(singkat|pendek|ringkas|padat|to the point)\b/.test(t)) return "singkat";
-  if (/^(lengkap|detail|detil|panjang|jelas)\b/.test(t)) return "lengkap";
-  return undefined;
-}
-
-export function callNameButtons(user: Pick<UserRow, "displayName">): Button[] {
-  const own = user.displayName ? normalizeCallName(user.displayName) : undefined;
-  const ownButton = own && own.length <= 20 && own.toLowerCase() !== "bos" ? [{ id: "setup:call:name", title: own }] : [];
-  return [...ownButton, SETUP_BTN.callBos, SETUP_BTN.skip];
-}
-
-export function assistantNameButtons(user: Pick<UserRow, "assistantName" | "persona">): Button[] {
-  const current = user.assistantName ?? DEFAULT_ASSISTANT_NAME;
-  const suggested = findPersona(user.persona)?.suggestedName;
-  const buttons: Button[] = [];
-  if (suggested && suggested !== current) buttons.push({ id: "setup:name:suggested", title: `Nama: ${suggested}`.slice(0, 20) });
-  buttons.push({ ...SETUP_BTN.keepMilo, title: `Tetap ${current}`.slice(0, 20) });
-  return buttons;
-}
-
-export function setupSummary(user: UserRow): string[] {
-  const p = user.profile ?? {};
-  const persona = findPersona(user.persona);
-  return [
-    `• Panggilan: ${p.callName ?? "—"}`,
-    `• Pekerjaan/usaha: ${p.work ?? "—"}`,
-    `• Asisten: *${user.assistantName ?? DEFAULT_ASSISTANT_NAME}*, gaya ${persona ? persona.label : "standar"}`,
-    `• Jawaban: ${styleLabel(p.answerStyle)}`,
-    `• Ringkasan agenda pagi: ${p.briefingTime ? `jam ${clockLabel(p.briefingTime)}` : "mati"}`,
-  ];
 }

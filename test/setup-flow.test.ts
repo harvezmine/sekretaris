@@ -3,18 +3,7 @@ import { describe, test } from "node:test";
 import { config } from "../src/config.ts";
 import type { UserRow } from "../src/db/index.ts";
 import { helpText, SETUP, welcome } from "../src/onboarding/copy.ts";
-import {
-  assistantNameButtons,
-  callNameButtons,
-  keywordAction,
-  looksLikeRequest,
-  nextStep,
-  parseAnswerStyle,
-  parsePersonaChoice,
-  quickRows,
-  SETUP_ORDER,
-  SKIP,
-} from "../src/onboarding/setup.ts";
+import { isYes, keywordAction, looksLikeRequest, nextStep, quickRows, SETUP_ORDER, SKIP } from "../src/onboarding/setup.ts";
 import { localNow } from "../src/profile/agenda.ts";
 import { normalizeCallName, normalizeWork, parseClock, profilePromptLines } from "../src/profile/profile.ts";
 import { assertButtons, assertList } from "../src/wa/client.ts";
@@ -45,52 +34,43 @@ describe("getting to know the user", () => {
     assert.equal(normalizeWork("x"), undefined);
     assert.equal(normalizeWork("a".repeat(201)), undefined);
 
-    assert.equal((parsePersonaChoice("11") as { id: string }).id, "anime-kawaii");
-    assert.equal((parsePersonaChoice("nomor 4") as { id: string }).id, "anime-hero");
-    assert.equal((parsePersonaChoice("Tsundere") as { id: string }).id, "tsundere");
-    assert.equal((parsePersonaChoice("mentor bisnis") as { id: string }).id, "mentor");
-    assert.equal(parsePersonaChoice("standar"), "standard");
-    assert.equal(parsePersonaChoice("15"), undefined);
-    assert.equal(parsePersonaChoice("yang lucu"), undefined);
-
-    assert.equal(parseAnswerStyle("singkat aja"), "singkat");
-    assert.equal(parseAnswerStyle("Lengkap"), "lengkap");
-    assert.equal(parseAnswerStyle("terserah"), undefined);
     assert.ok(SKIP.test("lewati") && SKIP.test("Nanti") && SKIP.test("ga usah"));
+    for (const yes of ["ya", "iya", "boleh", "mau dong", "oke", "silakan", "Sip"]) assert.ok(isYes(yes), yes);
+    for (const no of ["nanti", "gak usah", "apa itu?", ""]) assert.equal(isYes(no), false, no);
   });
 
   test("questions and instructions are not mistaken for answers", () => {
     assert.equal(looksLikeRequest("Pak Josh", "callName"), false);
     assert.equal(looksLikeRequest("punya 3 cabang kedai kopi di Jakarta Selatan dan Bekasi", "work"), false);
-    assert.equal(looksLikeRequest("11", "persona"), false);
+    assert.equal(looksLikeRequest("boleh", "connect"), false);
     assert.equal(looksLikeRequest("ingetin besok jam 9 rapat", "callName"), true);
     assert.equal(looksLikeRequest("jadwal saya hari ini?", "work"), true);
-    assert.equal(looksLikeRequest("tolong kirim pesan ke Andi", "briefing"), true);
-    assert.equal(looksLikeRequest("saya mau nanya soal laporan bulan lalu", "persona"), true);
+    assert.equal(looksLikeRequest("tolong kirim pesan ke Andi", "connect"), true);
+    assert.equal(looksLikeRequest("saya mau nanya soal laporan bulan lalu", "connect"), true);
     assert.equal(keywordAction("AGENDA"), "agenda");
     assert.equal(keywordAction("jadwal hari ini"), "agenda");
     assert.equal(keywordAction("Profil"), "profile");
     assert.equal(keywordAction("gaya"), "style");
     assert.equal(keywordAction("bantuan"), "help");
     assert.equal(keywordAction("agenda rapat besok"), undefined);
-    assert.deepEqual(SETUP_ORDER, ["callName", "work", "persona", "assistantName", "answerStyle", "briefing", "connect"]);
-    assert.equal(nextStep("briefing"), undefined, "no connect step when nothing can be connected");
-    assert.equal(nextStep("briefing", true), "connect");
+    assert.deepEqual(SETUP_ORDER, ["callName", "work", "connect"], "three questions, and nothing to tap");
+    assert.equal(nextStep("work"), undefined, "no connect step when nothing can be connected");
+    assert.equal(nextStep("work", true), "connect");
     assert.equal(nextStep("connect", true), undefined);
   });
 
-  test("setup buttons fit WhatsApp limits", () => {
-    assert.deepEqual(callNameButtons(user()).map((b) => b.id), ["setup:call:name", "setup:call:bos", "setup:skip"]);
-    assert.deepEqual(callNameButtons(user({ displayName: "Bos" })).map((b) => b.id), ["setup:call:bos", "setup:skip"]);
-    assert.deepEqual(callNameButtons(user({ displayName: "🔥🔥" })).map((b) => b.id), ["setup:call:bos", "setup:skip"]);
-    assert.deepEqual(
-      assistantNameButtons(user({ persona: "butler", assistantName: null })).map((b) => b.title),
-      ["Nama: Sebastian", "Tetap Milo"],
-    );
-    assert.deepEqual(assistantNameButtons(user({ persona: null, assistantName: "Nadia" })).map((b) => b.title), ["Tetap Nadia"]);
-    for (const buttons of [callNameButtons(user({ displayName: "Josh Hartono Wijaya" })), assistantNameButtons(user({ persona: "sekretaris" }))]) {
-      assertButtons(SETUP.callName(true), buttons);
+  test("the first message is short, says nothing about features, and carries the notice", () => {
+    const hello = welcome("Josh");
+    assert.ok(hello.length < 300, `${hello.length} karakter`);
+    assert.equal(hello.split("\n").filter(Boolean).length, 3);
+    assert.match(hello, /Halo Josh/);
+    assert.match(hello, /kode undangan/);
+    assert.match(hello, /menyimpan nomor dan percakapan/);
+    for (const feature of [/Cek server/, /Google/, /pengingat/i, /kepribadian/i]) {
+      assert.ok(!feature.test(hello), `perkenalan tidak menyebut ${feature}`);
     }
+    assert.match(SETUP.callName("Josh"), /saya panggil Anda apa\?/i);
+    assert.ok(!/\d\/\d/.test(SETUP.work), "no step numbering");
   });
 
   test("the quick menu fits a WhatsApp list even with every feature on", () => {
@@ -101,9 +81,7 @@ describe("getting to know the user", () => {
       assert.equal(rows.length, 9);
       assert.ok(rows.some((r) => r.id === "qa:server") && rows.some((r) => r.title === "✉️ Kirim pesan"));
       assertList("Pilih", "Pilih menu", rows);
-      assert.ok(welcome("Josh Hartono Wijaya").length <= 1024, `${welcome("Josh Hartono Wijaya").length} karakter`);
-      assert.match(welcome(null), /Cek server/);
-      assert.match(helpText({ attachments: false, messaging: true, servers: true }), /ketik \*FILE\*/);
+      assert.match(helpText({ attachments: false, servers: true }), /ketik \*FILE\*/);
     } finally {
       Object.assign(config, original);
     }

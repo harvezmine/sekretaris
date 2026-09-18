@@ -7,30 +7,25 @@ import { deleteUserMedia, discardInboundMedia, loadInboundMedia, saveMediaCaptur
 import { findCode, hasPendiriRedemption, looksLikeCode, redeem } from "./onboarding/codes.js";
 import * as copy from "./onboarding/copy.js";
 import {
-  assistantNameButtons,
-  callNameButtons,
-  connectRows,
   CONNECT_ROWS,
   FINISH,
   helpFor,
   isSetupStep,
+  isYes,
   keywordAction,
   looksLikeRequest,
   nextStep,
-  parseAnswerStyle,
   parseConnectChoice,
-  parsePersonaChoice,
   QUICK_ACTIONS,
   QUICK_MENU_LABEL,
   quickRows,
-  setupSummary,
-  setupTotal,
   SKIP,
   withConnectStep,
   type ConnectChoice,
   type QuickAction,
   type SetupStep,
 } from "./onboarding/setup.js";
+import { preboardReply } from "./onboarding/preboard.js";
 import {
   actionButtons,
   cancelAction,
@@ -55,9 +50,9 @@ import {
 import { CONNECT_MINUTES, connectUrlFor } from "./google/connect.js";
 import { serverToolsFor } from "./servers/registry.js";
 import { listUserServers } from "./servers/userServers.js";
-import { DEFAULT_ASSISTANT_NAME, findPersona, normalizeAssistantName, personaChoices, personaMenu } from "./persona/catalog.js";
+import { DEFAULT_ASSISTANT_NAME, findPersona, personaMenu } from "./persona/catalog.js";
 import { agendaText } from "./profile/agenda.js";
-import { normalizeCallName, normalizeWork, parseClock, profileSummary, updateProfile } from "./profile/profile.js";
+import { normalizeCallName, normalizeWork, profileSummary, updateProfile } from "./profile/profile.js";
 import {
   activeThreadFor,
   assistantLabel,
@@ -95,6 +90,7 @@ export type State =
   | "MENU"
   | "AWAITING_CODE"
   | "AWAITING_PAYMENT"
+  | "PREBOARD"
   | "SETUP"
   | "READY"
   | "CONFIRM_DELETE"
@@ -107,6 +103,9 @@ interface PendingMessage {
 }
 
 const KEYWORDS = ["STOP", "HAPUS", "MULAI", "MENU"] as const;
+
+/** A first message that is only a hello needs no answer beyond the hello back. */
+const GREETING = /^(halo+|hallo+|hai+|hi+|hey|helo+|p|ping|tes|test|assalam[^]*|pagi|siang|sore|malam|selamat \w+)[\s!.?]*$/i;
 type Keyword = (typeof KEYWORDS)[number];
 
 async function takePending(userId: string): Promise<PendingMessage[]> {
@@ -193,7 +192,8 @@ export class Pipeline {
     switch (user.state as State) {
       case "NEW":
       case "MENU":
-        return this.handleMenuText(user, lastOf(batch, "text")?.text);
+      case "PREBOARD":
+        return this.handlePreboard(user, batch);
       case "AWAITING_CODE":
         return this.handleCodeText(user, lastOf(batch, "text")?.text);
       case "AWAITING_PAYMENT":
@@ -221,25 +221,42 @@ export class Pipeline {
       await this.showQuickMenu(updated);
       return;
     }
-    if (user.state === "NEW") {
-      const updated = await updateUser(user.id, { state: "MENU" });
-      await this.d.outbox.buttons(updated, copy.welcome(updated.displayName), copy.MENU_NEW);
-      return;
-    }
-    if (user.state !== "MENU") await updateUser(user.id, { state: "MENU", stateData: {} });
-    await this.d.outbox.buttons(user, copy.TEXT.menuPrompt, this.menuFor(user));
+    const updated = user.state === "PREBOARD" ? user : await updateUser(user.id, { state: "PREBOARD", stateData: {} });
+    await this.d.outbox.buttons(updated, copy.TEXT.menuPrompt, this.menuFor(updated));
   }
 
-  private async handleMenuText(user: UserRow, text: string | undefined): Promise<void> {
-    if (text && looksLikeCode(text) && (await findCode(text))) {
-      return this.applyCode(user, text);
+  /**
+   * Before someone has access there is no feature tour and no numbered choices: a short hello, then a bounded model
+   * that answers what Milo is, what it costs and what happens to their data, and nothing else.
+   */
+  private async handlePreboard(user: UserRow, batch: PendingMessage[]): Promise<void> {
+    const text = lastOf(batch, "text")?.text.trim() ?? "";
+    if (text && looksLikeCode(text) && (await findCode(text))) return this.applyCode(user, text);
+
+    if (user.state !== "PREBOARD") {
+      const updated = await updateUser(user.id, { state: "PREBOARD", stateData: {} });
+      await this.d.outbox.text(updated, copy.welcome(updated.displayName), { raw: true });
+      if (!text || GREETING.test(text)) return;
+      return this.answerPreboard(updated, text);
     }
-    if (user.state === "NEW") {
-      const updated = await updateUser(user.id, { state: "MENU" });
-      await this.d.outbox.buttons(updated, copy.welcome(updated.displayName), copy.MENU_NEW);
+
+    // They kept chatting after the notice in the hello, which is the consent that notice describes.
+    const updated = user.consentAt ? user : await updateUser(user.id, { consentAt: new Date() });
+    if (!text) {
+      await this.d.outbox.text(updated, copy.TEXT.preboardFallback, { raw: true });
       return;
     }
-    await this.d.outbox.buttons(user, copy.TEXT.menuPrompt, this.menuFor(user));
+    return this.answerPreboard(updated, text);
+  }
+
+  private async answerPreboard(user: UserRow, text: string): Promise<void> {
+    const outcome = await preboardReply(user, text, { agent: this.d.agent, log: this.d.log });
+    if (!outcome) {
+      await this.d.outbox.text(user, copy.TEXT.preboardFallback, { raw: true });
+      return;
+    }
+    if (outcome.text) await this.d.outbox.text(user, outcome.text, { raw: true });
+    if (outcome.checkout) await this.startCheckout(user.consentAt ? user : await updateUser(user.id, { consentAt: new Date() }));
   }
 
   private async handleButton(user: UserRow, id: string): Promise<void> {
@@ -533,6 +550,9 @@ export class Pipeline {
           if (inbound.type === "fonnte-empty") {
             replies.push(copy.attachmentMissing(uploadUrlFor(user.id)));
             notes.push("[Pengguna mengirim file/foto lewat WhatsApp, tapi file dan keterangannya tidak sampai. Link unggah sudah dikirim.]");
+          } else if (inbound.type === "vcard-url") {
+            replies.push(copy.CONTACT_CARD_MISSING);
+            notes.push("[Pengguna membagikan kartu kontak, tapi isinya tidak bisa dibaca di kanal ini. Minta nama dan nomornya sebagai teks, lalu simpan dengan contact_save.]");
           } else {
             replies.push(copy.TEXT.unsupported);
           }
@@ -857,39 +877,21 @@ export class Pipeline {
 
   private async startSetup(user: UserRow, lead?: string): Promise<void> {
     const updated = await updateUser(user.id, { state: "SETUP", stateData: { setupStep: "callName" } });
-    await this.d.outbox.text(updated, [lead, copy.SETUP.intro(setupTotal(updated))].filter(Boolean).join("\n\n"), { raw: true });
+    if (lead) await this.d.outbox.text(updated, lead, { raw: true });
     await this.askSetupStep(updated, "callName");
   }
 
+  /** Three plain questions, answered in the user's own words: no numbers, no buttons, nothing to tap. */
   private async askSetupStep(user: UserRow, step: SetupStep): Promise<void> {
-    const total = setupTotal(user);
     switch (step) {
-      case "callName":
-        return this.d.outbox.buttons(user, copy.SETUP.callName(Boolean(user.displayName), total), callNameButtons(user));
+      case "callName": {
+        const own = user.displayName ? normalizeCallName(user.displayName) : undefined;
+        return this.d.outbox.text(user, copy.SETUP.callName(own), { raw: true });
+      }
       case "work":
-        return this.d.outbox.buttons(user, copy.SETUP.work(total), [copy.SETUP_BTN.skip]);
-      case "persona":
-        return this.d.outbox.text(user, [copy.SETUP.personaIntro(total), "", ...personaChoices()].join("\n"), { raw: true });
-      case "assistantName":
-        return this.d.outbox.buttons(
-          user,
-          copy.SETUP.assistantName(findPersona(user.persona)?.suggestedName),
-          assistantNameButtons(user),
-        );
-      case "answerStyle":
-        return this.d.outbox.buttons(user, copy.SETUP.answerStyle(total), [
-          copy.SETUP_BTN.styleShort,
-          copy.SETUP_BTN.styleLong,
-          copy.SETUP_BTN.skip,
-        ]);
-      case "briefing":
-        return this.d.outbox.buttons(user, copy.SETUP.briefing(total), [
-          copy.SETUP_BTN.briefing7,
-          copy.SETUP_BTN.briefing8,
-          copy.SETUP_BTN.briefingOff,
-        ]);
+        return this.d.outbox.text(user, copy.SETUP.work, { raw: true });
       case "connect":
-        return this.d.outbox.list(user, copy.SETUP.connect(total), "Pilih akun", connectRows(user));
+        return this.d.outbox.text(user, copy.SETUP.connect, { raw: true });
     }
   }
 
@@ -902,10 +904,6 @@ export class Pipeline {
     const step = this.currentStep(user);
     const texts = batch.filter((m) => m.inbound.kind === "text");
     const answer = texts.length === batch.length ? (lastOf(batch, "text")?.text.trim() ?? "") : "";
-    if (step === "connect" && answer) {
-      const choice = parseConnectChoice(answer);
-      if (choice) return this.connectChoice(user, choice);
-    }
     if (!answer || keywordAction(answer) || looksLikeRequest(answer, step)) {
       return this.pauseSetup(user, batch);
     }
@@ -925,32 +923,12 @@ export class Pipeline {
         await updateProfile(user.id, { work });
         return this.advanceSetup(user, step);
       }
-      case "persona": {
-        const choice = parsePersonaChoice(answer);
-        if (!choice) return this.replySetupRetry(user, copy.SETUP.retryPersona);
-        await sql`update users set persona = ${choice === "standard" ? null : choice.id}, updated_at = now() where id = ${user.id}`;
-        return this.advanceSetup(user, step);
+      case "connect": {
+        const choice = parseConnectChoice(answer);
+        if (choice) return this.connectChoice(user, choice);
+        if (isYes(answer)) return this.connectChoice(user, "google");
+        return this.finishSetup(user);
       }
-      case "assistantName": {
-        const assistantName = normalizeAssistantName(answer);
-        if (!assistantName) return this.replySetupRetry(user, copy.SETUP.retryAssistantName);
-        await sql`update users set assistant_name = ${assistantName}, updated_at = now() where id = ${user.id}`;
-        return this.advanceSetup(user, step);
-      }
-      case "answerStyle": {
-        const answerStyle = parseAnswerStyle(answer);
-        if (!answerStyle) return this.askSetupStep(user, step);
-        await updateProfile(user.id, { answerStyle });
-        return this.advanceSetup(user, step);
-      }
-      case "briefing": {
-        const briefingTime = parseClock(answer);
-        if (!briefingTime) return this.replySetupRetry(user, copy.SETUP.retryBriefing);
-        await updateProfile(user.id, { briefingTime });
-        return this.advanceSetup(user, step);
-      }
-      case "connect":
-        return this.askSetupStep(user, step);
     }
   }
 
@@ -962,33 +940,7 @@ export class Pipeline {
     if (!hasAccess(user)) return this.showMenu(user);
     if (action === "restart") return this.startSetup(user);
     if (user.state !== "SETUP") return this.showQuickMenu(user);
-    const step = this.currentStep(user);
-    if (action === "skip") return this.advanceSetup(user, step);
-
-    const [kind, ...restParts] = action.split(":");
-    const value = restParts.join(":");
-    if (kind === "call" && step === "callName") {
-      const callName = value === "bos" ? "Bos" : user.displayName ? normalizeCallName(user.displayName) : undefined;
-      if (callName) await updateProfile(user.id, { callName });
-      return this.advanceSetup(user, step);
-    }
-    if (kind === "name" && step === "assistantName") {
-      const suggested = findPersona(user.persona)?.suggestedName;
-      if (value === "suggested" && suggested) {
-        await sql`update users set assistant_name = ${suggested}, updated_at = now() where id = ${user.id}`;
-      }
-      return this.advanceSetup(user, step);
-    }
-    if (kind === "style" && step === "answerStyle" && (value === "singkat" || value === "lengkap")) {
-      await updateProfile(user.id, { answerStyle: value });
-      return this.advanceSetup(user, step);
-    }
-    if (kind === "brief" && step === "briefing") {
-      const briefingTime = value === "off" ? null : parseClock(value);
-      if (briefingTime !== undefined) await updateProfile(user.id, { briefingTime });
-      return this.advanceSetup(user, step);
-    }
-    return this.askSetupStep(user, step);
+    return this.askSetupStep(user, this.currentStep(user));
   }
 
   private async advanceSetup(user: UserRow, from: SetupStep): Promise<void> {
@@ -1002,8 +954,7 @@ export class Pipeline {
     await updateProfile(user.id, { setupDoneAt: new Date().toISOString() });
     const updated = await updateUser(user.id, { state: "READY", stateData: {} });
     await closeSessions(user.id);
-    await this.d.outbox.text(updated, copy.setupDone(setupSummary(updated)), { raw: true });
-    await this.showQuickMenu(updated);
+    await this.d.outbox.text(updated, copy.setupDone(updated.profile?.callName), { raw: true });
   }
 
   /** Something other than an answer arrived: stop asking and treat it as a normal message. */

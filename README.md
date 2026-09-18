@@ -11,7 +11,9 @@ Yang ada di POC ini:
 - **Agent Claude** dengan 10 tool (file tersimpan, pengingat, kontak, fakta, draf pesan, status akun), prompt cache
   1 jam, dan fallback server-side.
 - **Debounce 4 detik**: pesan beruntun digabung jadi satu giliran.
-- **Pengingat** yang menghormati jendela 24 jam WhatsApp.
+- **Pengingat**, sekali jalan atau berulang (harian, mingguan pada hari tertentu, bulanan, tahunan), yang menghormati
+  jendela 24 jam WhatsApp. Kejadian berikutnya dijadwalkan setelah yang sekarang terkirim, jadi selalu ada satu baris
+  aktif per seri; yang terlewat saat app mati dilewati, bukan dikirim menumpuk.
 - **Laporan pemakaian**: biaya per giliran, porsi cache, sebaran ringan/sedang/berat — angka yang dibutuhkan untuk
   memvalidasi rancangan harga.
 - **STOP** dan **HAPUS** (UU PDP), **MENU** dan **MULAI**.
@@ -261,7 +263,7 @@ src/
   payments/           interface provider, bypass, InstanPay, aktivasi langganan
   capture/            unduh media, ekstraksi PDF/DOCX/teks
   voice/              transkripsi pesan suara (API kompatibel OpenAI, default Groq)
-  reminders/          pengiriman pengingat & kedaluwarsa QR
+  reminders/          pengiriman pengingat, aturan pengulangan (RRULE), kedaluwarsa QR
   admin/              laporan pemakaian dan rute admin
   uploads/            link & halaman unggah file (untuk kanal tanpa lampiran)
   relay/              pesan ke orang lain atas nama pengguna, konfirmasi, dan penerusan balasan

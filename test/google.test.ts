@@ -376,18 +376,15 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     const [code] = await createCodes({ kind: "trial", count: 1, maxUses: 1, trialDays: 14, expiresInDays: 30, source: "uji-google" });
     await say(u, "halo");
     await say(u, code!.code);
-    assert.match(out(u).at(-2)!.text!, /\*6 pertanyaan singkat\*/);
-    for (const answer of ["lewati", "lewati", "lewati", "lewati", "lewati", "lewati"]) await say(u, answer);
+    for (const answer of ["lewati", "lewati"]) await say(u, answer);
     const step = last(u);
-    assert.equal(step.type, "list");
-    assert.match(step.text!, /^\*6\/6\* · Hubungkan akun/);
-    assert.deepEqual(step.buttons!.map((b) => b.id), ["conn:google:all", "conn:google:calendar", "conn:google:gmail", "conn:google:drive", "setup:skip"]);
+    assert.equal(step.type, "text", "the last question is asked in words, not as a list to tap");
+    assert.match(step.text!, /sambungkan ke Google Anda \(kalender, email, Drive\)/);
 
-    await tap(u, "conn:google:all");
-    const [linkMsg, done, menu] = out(u).slice(-3);
+    await say(u, "boleh");
+    const [linkMsg, done] = out(u).slice(-2);
     assert.match(linkMsg!.text!, /^🔗 \*Hubungkan Google Kalender, Gmail, Google Drive\*\nhttps:\/\/milo\.example\.com\/connect\//);
-    assert.match(done!.text!, /Beres, kita sudah kenalan/);
-    assert.ok(menu!.buttons!.some((b) => b.id === "qa:connect"));
+    assert.match(done!.text!, /Ada yang bisa saya bantu/);
     assert.equal((await byWa(u)).state, "READY");
 
     const link = new URL(/https:\/\/\S+/.exec(linkMsg!.text!)![0]);

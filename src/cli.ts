@@ -1,11 +1,18 @@
 import { createHmac } from "node:crypto";
 import { parseArgs } from "node:util";
 import { listUsers, usageReport } from "./admin/reports.js";
-import { migrate, sql } from "./db/index.js";
+import { toolsFor } from "./agent/tools.js";
+import { config } from "./config.js";
+import { migrate, sql, type UserRow } from "./db/index.js";
+import { googleEnabled } from "./google/client.js";
+import { messageSendFor } from "./relay/service.js";
+import { directAttachments } from "./uploads/links.js";
+import { normalizePhone } from "./util.js";
+import { webSearchEnabled } from "./web/search.js";
 import { createCodes } from "./onboarding/codes.js";
 import { BTN } from "./onboarding/copy.js";
 import { CHECKS, describeLogSource, describeServer, logCheckFor, runCheck, type Check } from "./servers/checks.js";
-import { adminNumbers, allApps, findApp, findServer, registry } from "./servers/registry.js";
+import { adminNumbers, allApps, findApp, findServer, registry, serverToolsFor } from "./servers/registry.js";
 
 const HELP = `Milo CLI
 
@@ -15,6 +22,8 @@ const HELP = `Milo CLI
   users                 Daftar pengguna terbaru.
   paid <provider_ref>   Tandai pembayaran lunas lewat server yang sedang berjalan (butuh ADMIN_TOKEN & PORT).
   servers               Daftar server yang bisa dicek Milo dan jumlah nomor admin.
+  status <nomor>        Fitur apa yang aktif untuk satu nomor: kirim pesan ke orang lain, server, Google,
+                        pencarian web, lampiran — beserta daftar tool yang diterima AI untuk nomor itu.
   server <nama> <cek> [target|url] [--lines N]
                         Jalankan satu cek server persis seperti yang dilakukan Milo.
                         Cek: ${CHECKS.join(", ")}.
@@ -198,6 +207,33 @@ async function main(): Promise<void> {
           onlyErrors: values.errors ?? false,
         }),
       );
+      break;
+    }
+    case "status": {
+      const [raw] = positionals;
+      if (!raw) throw new Error("pakai: status <nomor>");
+      const waId = normalizePhone(raw);
+      if (!waId) throw new Error(`nomor tidak bisa dibaca: ${raw}`);
+      const admin = adminNumbers();
+      const messaging = messageSendFor(waId);
+      const rows: [string, string][] = [
+        ["Nomor", waId],
+        ["Kanal WhatsApp", config.WA_PROVIDER],
+        ["Nomor admin", `${admin.has(waId) ? "ya" : "tidak"} (SERVER_ADMIN_NUMBERS berisi ${admin.size} nomor)`],
+        ["Kirim ke orang lain", `${messaging ? "AKTIF" : "MATI"} (MESSAGE_SEND_ACCESS=${config.MESSAGE_SEND_ACCESS}, batas ${config.MESSAGE_SEND_DAILY_LIMIT}/hari)`],
+        ["Cek server", `${serverToolsFor(waId) ? "AKTIF" : "MATI"} (SERVER_ACCESS=${config.SERVER_ACCESS})`],
+        ["Google", googleEnabled() ? "siap dihubungkan" : "MATI (GOOGLE_CLIENT_ID kosong)"],
+        ["Pencarian web", webSearchEnabled() ? "AKTIF" : "MATI (SEARXNG_URL & TAVILY_API_KEY kosong)"],
+        ["Lampiran di chat", directAttachments() ? "bisa" : "lewat link unggah (FONNTE_ATTACHMENTS=false)"],
+      ];
+      for (const [label, value] of rows) console.log(`${label.padEnd(20)}: ${value}`);
+      console.log(`${"Tool untuk AI".padEnd(20)}: ${toolsFor({ waId } as UserRow).map((t) => t.name).join(", ")}`);
+      if (!messaging) {
+        console.log(
+          "\nMilo akan membalas dengan link wa.me, bukan mengirim sendiri. Untuk mengaktifkan: isi MESSAGE_SEND_ACCESS=all,\n" +
+            "atau tambahkan nomor ini ke SERVER_ADMIN_NUMBERS lalu jalankan ulang app-nya.",
+        );
+      }
       break;
     }
     case "say": {

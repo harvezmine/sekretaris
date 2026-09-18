@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import { buildApp, type App } from "../src/app.ts";
+import { config } from "../src/config.ts";
 import { buildSnapshot } from "../src/agent/prompt.ts";
 import { Agent } from "../src/agent/run.ts";
 import { runTool } from "../src/agent/tools.ts";
@@ -49,9 +50,17 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
   let wa: DryRunClient;
   const agentCalls: { waId: string; text: string; softMode: boolean }[] = [];
 
+  const briefCalls: { waId: string; system: string; last: string }[] = [];
+
   const fakeAgent = {
     async modelFor() {
       return "claude-opus-5";
+    },
+    async brief(user: UserRow, system: string, messages: { role: string; content: string }[]) {
+      const last = String(messages.at(-1)?.content ?? "");
+      briefCalls.push({ waId: user.waId, system, last });
+      if (/langganan|bayar/i.test(last)) return { text: "Oke, ini QR-nya.", calls: ["start_checkout"] };
+      return { text: "Milo itu asisten pribadi di WhatsApp.", calls: [] };
     },
     async run(user: UserRow, turn: string, opts: { softMode: boolean }) {
       agentCalls.push({ waId: user.waId, text: turn, softMode: opts.softMode });
@@ -123,27 +132,37 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal(health.json().ok, true);
   });
 
-  test("a new user gets the static welcome, and pricing/FAQ never call the model", async () => {
+  test("a new user gets a short hello, then a model that can talk but cannot work", async () => {
     const u = "6281100000001";
     await send(u, [text(u, "halo")]);
-    const welcome = lastOut(u)!;
-    assert.equal(welcome.type, "buttons");
-    assert.match(welcome.text!, /Halo Josh/);
-    assert.deepEqual(welcome.buttons!.map((b) => b.id), ["code", "price", "faq"]);
-    assert.equal((await userByWa(u))!.state, "MENU");
+    const hello = lastOut(u)!;
+    assert.equal(hello.type, "text", "no buttons and no numbered choices before activation");
+    assert.match(hello.text!, /^Halo Josh/);
+    assert.ok(!/pengingat|dokumen|Google/i.test(hello.text!), "the hello does not tour the features");
+    assert.equal((await userByWa(u))!.state, "PREBOARD");
+    assert.equal(briefCalls.length, 0, "a bare greeting is answered by the hello alone");
+    assert.equal((await userByWa(u))!.consentAt, null);
 
     await send(u, [text(u, "ini apa ya")]);
-    assert.equal(lastOut(u)!.text, "Untuk mulai, pilih salah satu di bawah ini.");
+    assert.equal(lastOut(u)!.text, "Milo itu asisten pribadi di WhatsApp.");
+    assert.equal(briefCalls.at(-1)!.last, "ini apa ya");
+    assert.match(briefCalls.at(-1)!.system, /not a customer yet/);
+    assert.ok((await userByWa(u))!.consentAt, "chatting on after the notice is the consent");
 
-    await send(u, [button(u, "price")]);
+    await send(u, [text(u, "saya mau langganan")]);
     const out = outFor(u);
-    assert.match(out.at(-2)!.text!, /Profesional\* — Rp500\.000\/bulan/);
-    assert.deepEqual(out.at(-1)!.buttons!.map((b) => b.id), ["subscribe", "executive", "code"]);
-    assert.ok((await userByWa(u))!.consentAt, "consent recorded on first button");
+    assert.equal(out.at(-3)!.text, "Oke, ini QR-nya.");
+    assert.equal(out.at(-2)!.type, "image", "start_checkout goes straight to the QR");
+    assert.equal((await userByWa(u))!.state, "AWAITING_PAYMENT");
 
+    await send(u, [button(u, "cancel_pay")]);
+    await send(u, [text(u, "MENU")]);
+    assert.deepEqual(lastOut(u)!.buttons!.map((b) => b.id), ["code", "price", "faq"], "the menu is still there when asked for by name");
+    await send(u, [button(u, "price")]);
+    assert.match(outFor(u).at(-2)!.text!, /Profesional\* — Rp500\.000\/bulan/);
     await send(u, [button(u, "faq")]);
     assert.match(outFor(u).at(-2)!.text!, /Pertanyaan yang sering muncul/);
-    assert.equal(agentCalls.length, 0);
+    assert.equal(agentCalls.length, 0, "the full assistant never runs before activation");
   });
 
   test("trial codes: wrong code, right code, and no second trial", async () => {
@@ -163,7 +182,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal(user.state, "SETUP", "a new trial starts with getting to know the user");
     const [started, firstQuestion] = outFor(u).slice(-2);
     assert.match(started!.text!, /Masa coba \*14 hari\* aktif/);
-    assert.match(firstQuestion!.text!, /1\/5.+Mau saya panggil apa/s);
+    assert.match(firstQuestion!.text!, /saya panggil Anda apa\?/i);
     const nudges = await sql`select fire_at from reminders where user_id = ${user.id} and kind = 'trial_nudge'`;
     assert.equal(nudges.length, 1);
 
@@ -191,7 +210,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     assert.equal((await userByWa(u))!.state, "AWAITING_PAYMENT");
 
     await waitFor(async () => (await userByWa(u))!.status === "active");
-    await waitFor(async () => outFor(u).some((e) => /Mau saya panggil apa/.test(e.text ?? "")));
+    await waitFor(async () => outFor(u).some((e) => /saya panggil Anda apa/.test(e.text ?? "")));
     const user = (await userByWa(u))!;
     assert.equal(user.plan, "profesional");
     assert.equal(user.state, "SETUP", "a new subscriber gets the same getting-to-know-you as a trial");
@@ -329,51 +348,38 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     await send(u, [text(u, code!.code)]);
   };
 
-  test("a new trial gets to know the user without the model, and the answers shape the profile", async () => {
+  test("getting to know a new user is three plain questions, answered in their own words", async () => {
     const u = "6281100000032";
     await startTrial(u);
     agentCalls.length = 0;
 
     let q = lastOut(u)!;
-    assert.equal(q.type, "buttons");
-    assert.match(q.text!, /\*1\/5\* · Mau saya panggil apa/);
-    assert.deepEqual(q.buttons!.map((b) => b.id), ["setup:call:name", "setup:call:bos", "setup:skip"]);
-    assert.equal(q.buttons![0]!.title, "Josh");
+    assert.equal(q.type, "text", "nothing to tap, nothing numbered");
+    assert.match(q.text!, /saya panggil Anda apa\?/i);
+    assert.match(q.text!, /Josh juga boleh/, "their WhatsApp name is offered, not imposed");
 
     await send(u, [text(u, "Pak Josh")]);
-    assert.match(lastOut(u)!.text!, /\*2\/5\* · Apa usaha atau pekerjaan/);
-    await send(u, [text(u, "punya 3 cabang kedai kopi")]);
-    q = lastOut(u)!;
-    assert.equal(q.type, "text");
-    assert.match(q.text!, /\*3\/5\* · Pilih kepribadian/);
-    assert.match(q.text!, /\n11\. \*Anime Kawaii\*/);
+    assert.match(lastOut(u)!.text!, /kerja apa\?/);
+    Object.assign(config, { GOOGLE_CLIENT_ID: "cid.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "rahasia" });
+    try {
+      await send(u, [text(u, "punya 3 cabang kedai kopi")]);
+      q = lastOut(u)!;
+      assert.equal(q.type, "text");
+      assert.match(q.text!, /sambungkan ke Google/);
+    } finally {
+      Object.assign(config, { GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" });
+    }
 
-    await send(u, [text(u, "angka 20")]);
-    assert.match(lastOut(u)!.text!, /Balas dengan angka 1–14/);
-    await send(u, [text(u, "11")]);
-    q = lastOut(u)!;
-    assert.match(q.text!, /Nama yang cocok untuk gaya ini: \*Yuki\*/);
-    assert.deepEqual(q.buttons!.map((b) => b.title), ["Nama: Yuki", "Tetap Milo"]);
-    await send(u, [button(u, "setup:name:suggested")]);
-    assert.match(lastOut(u)!.text!, /\*4\/5\* · Suka jawaban seperti apa/);
-    await send(u, [button(u, "setup:style:singkat")]);
-    assert.match(lastOut(u)!.text!, /\*5\/5\* · Mau saya kirimi \*ringkasan agenda setiap pagi\*/);
-    await send(u, [text(u, "jam 6.30")]);
-
-    const [done, menu] = outFor(u).slice(-2);
-    assert.match(done!.text!, /Beres, kita sudah kenalan/);
-    assert.match(done!.text!, /Panggilan: Pak Josh\n• Pekerjaan\/usaha: punya 3 cabang kedai kopi\n• Asisten: \*Yuki\*, gaya Anime Kawaii\n• Jawaban: singkat & padat\n• Ringkasan agenda pagi: jam 06\.30/);
-    assert.equal(menu!.type, "list");
-    assert.match(menu!.text!, /^Hai Pak Josh, ada yang bisa Yuki bantu\?/);
-    assert.equal(menu!.buttons![0]!.id, "qa:agenda");
+    await send(u, [text(u, "nanti saja")]);
+    const done = lastOut(u)!;
+    assert.equal(done.type, "text", "no menu is pushed at the end");
+    assert.equal(done.text, "Siap, Pak Josh. Ada yang bisa saya bantu sekarang?");
 
     const user = (await userByWa(u))!;
     assert.equal(user.state, "READY");
-    assert.equal(user.persona, "anime-kawaii");
-    assert.equal(user.assistantName, "Yuki");
     const { setupDoneAt, ...profile } = user.profile;
     assert.ok(setupDoneAt);
-    assert.deepEqual(profile, { callName: "Pak Josh", work: "punya 3 cabang kedai kopi", answerStyle: "singkat", briefingTime: "06:30" });
+    assert.deepEqual(profile, { callName: "Pak Josh", work: "punya 3 cabang kedai kopi" });
     assert.equal(agentCalls.length, 0, "the whole introduction is scripted");
   });
 
@@ -383,10 +389,10 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     agentCalls.length = 0;
 
     await send(u, [text(u, "lewati")]);
-    assert.match(lastOut(u)!.text!, /\*2\/5\*/);
+    assert.match(lastOut(u)!.text!, /kerja apa\?/);
     await send(u, [text(u, "ingetin besok jam 9 rapat vendor")]);
     assert.deepEqual(agentCalls.map((c) => c.text), ["ingetin besok jam 9 rapat vendor"]);
-    assert.ok(outFor(u).some((e) => /perkenalannya saya jeda/.test(e.text ?? "")));
+    assert.ok(outFor(u).some((e) => /kenalannya nanti saja/.test(e.text ?? "")));
     let user = (await userByWa(u))!;
     assert.equal(user.state, "READY");
     assert.equal(user.profile.setupDoneAt, undefined);
@@ -398,7 +404,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
 
     await send(u, [button(u, "setup:restart")]);
     assert.equal((await userByWa(u))!.state, "SETUP");
-    assert.match(lastOut(u)!.text!, /\*1\/5\*/);
+    assert.match(lastOut(u)!.text!, /saya panggil Anda apa\?/i);
     await send(u, [text(u, "Bu Rina")]);
     await send(u, [text(u, "selesai")]);
     user = (await userByWa(u))!;

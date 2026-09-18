@@ -100,7 +100,10 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       const welcome = last(u)!;
       assert.equal(welcome.type, "text");
       assert.match(welcome.text!, /Halo Bos/);
-      assert.match(welcome.text!, /Balas dengan angka:\n\*1\.\* Punya Kode\n\*2\.\* Lihat Harga\n\*3\.\* Tanya Dulu$/);
+      assert.ok(!/Balas dengan angka/.test(welcome.text!), "the first contact has nothing to pick from");
+
+      await fonnte(u, "MENU");
+      assert.match(last(u)!.text!, /Balas dengan angka:\n\*1\.\* Punya Kode\n\*2\.\* Lihat Harga\n\*3\.\* Tanya Dulu$/);
 
       await fonnte(u, "2");
       const out = wa.sent.filter((e) => e.to === u);
@@ -211,8 +214,14 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       const outsider = { ...ownerRow, waId: "6282200000099" };
       config.SERVER_ADMIN_NUMBERS = owner;
       try {
-        assert.ok(toolsFor(ownerRow).some((t) => t.name === "message_send"));
-        assert.ok(!toolsFor(outsider).some((t) => t.name === "message_send"));
+        const ownerTools = toolsFor(ownerRow).map((t) => t.name);
+        const outsiderTools = toolsFor(outsider).map((t) => t.name);
+        assert.ok(ownerTools.includes("message_send"));
+        assert.ok(!outsiderTools.includes("message_send"));
+        assert.ok(
+          ![...ownerTools, ...outsiderTools].includes("message_draft"),
+          "no tool hands out a wa.me link any more: Milo sends the message itself or not at all",
+        );
         const denied = await runTool({ user: outsider }, "message_send", { phone: andi, text: "x" });
         assert.equal(denied.isError, true);
 
