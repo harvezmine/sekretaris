@@ -194,8 +194,9 @@ LANDING_PORT_VALUE="$(env_value LANDING_PORT)"
 LANDING_URL="http://127.0.0.1:${LANDING_PORT_VALUE:-8080}"
 if curl -fsS "$LANDING_URL/healthz" >/dev/null 2>&1; then
   LANDING_HTML="$(curl -fsS "$LANDING_URL/" || true)"
-  WA_LINKS="$(grep -o 'wa.me/62[0-9]*' <<<"$LANDING_HTML" | wc -l | tr -d ' ')"
-  WA_EMPTY="$(grep -o '__WA_NUMBER__' <<<"$LANDING_HTML" | wc -l | tr -d ' ')"
+  # grep exits 1 on zero matches; with pipefail + set -e that would end the script silently.
+  WA_LINKS="$({ grep -o 'wa.me/62[0-9]*' <<<"$LANDING_HTML" || true; } | wc -l | tr -d ' ')"
+  WA_EMPTY="$({ grep -o '__WA_NUMBER__' <<<"$LANDING_HTML" || true; } | wc -l | tr -d ' ')"
   log "Landing OK ($LANDING_URL), tombol WhatsApp berisi nomor: $WA_LINKS"
   [[ "$WA_EMPTY" == "0" ]] || log "PERINGATAN: $WA_EMPTY tombol WhatsApp belum berisi nomor. Cek LANDING_WA_NUMBER di .env"
 else
