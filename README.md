@@ -135,7 +135,9 @@ Google Cloud ada di [docs/setup-google.md](docs/setup-google.md).
 
 Paket Fonnte Free tidak meneruskan lampiran, jadi pengguna mengetik **FILE** untuk mendapatkan link unggah
 pribadi. File yang diunggah dibaca seperti lampiran biasa. Nomor di `SERVER_ADMIN_NUMBERS` juga bisa menyuruh Milo
-mengirim pesan ke kontaknya: pesan terkirim setelah pengguna menekan **Kirim**, dan balasannya diteruskan balik.
+mengirim pesan ke kontaknya: pesan terkirim setelah pengguna menekan **Kirim**, dan balasannya diteruskan balik. Satu nomor melayani dua peran sekaligus, jadi pesan masuk dipilah lebih dulu: penerima yang punya langganan
+sendiri tetap dilayani asistennya (pesan yang masuk untuknya disampaikan asistennya), sedangkan penerima biasa
+dianggap membalas pesan pengguna sampai ia mengetik MENU. Lihat [docs/setup-fonnte.md](docs/setup-fonnte.md).
 Lihat [docs/setup-fonnte.md](docs/setup-fonnte.md).
 
 ### Akses server

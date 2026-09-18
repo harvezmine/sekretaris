@@ -279,6 +279,18 @@ create table if not exists server_runs (
 );
 create index if not exists server_runs_user_idx on server_runs (user_id, id desc);
 
+create table if not exists relay_inbox (
+  id          bigserial primary key,
+  user_id     bigint not null references users(id) on delete cascade,
+  relay_id    bigint not null references relay_messages(id) on delete cascade,
+  from_wa     text not null,
+  from_name   text,
+  body        text not null,
+  created_at  timestamptz not null default now(),
+  seen_at     timestamptz
+);
+create index if not exists relay_inbox_unseen_idx on relay_inbox (user_id) where seen_at is null;
+
 create table if not exists routine_log (
   user_id  bigint not null references users(id) on delete cascade,
   kind     text not null,

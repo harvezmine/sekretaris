@@ -294,7 +294,8 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
 
         await fonnte(andi, "Siap, saya datang", { name: "Andi" });
         assert.equal(last(owner)!.text, "💬 *Andi* membalas (6281233334444):\nSiap, saya datang");
-        assert.equal(last(andi)!.text, "Terima kasih, pesan Anda sudah saya sampaikan ke Josh.\n\nSalam,\nMilo");
+        assert.match(last(andi)!.text!, /sudah saya sampaikan ke Josh\. Balasan berikutnya juga saya teruskan/);
+        assert.match(last(andi)!.text!, /ketik \*MENU\*/, "the way out of the thread is said once");
         assert.equal((await userByWa(andi))!.state, "NEW", "the recipient is not onboarded");
         await fonnte(andi, "Tolong siapkan proyektor", { name: "Andi" });
         assert.match(last(owner)!.text!, /Tolong siapkan proyektor/);
@@ -334,6 +335,72 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
       } finally {
         config.SERVER_ADMIN_NUMBERS = "";
         config.MESSAGE_SEND_DAILY_LIMIT = 20;
+      }
+    });
+
+    test("one number, two roles: a reply meant for the user never lands on the assistant instead", async () => {
+      const owner = "6282200000041";
+      const budi = "6281244445555";
+      const rina = "6282200000042";
+      await readyUser(owner, "Josh");
+      await readyUser(rina, "Rina");
+      config.SERVER_ADMIN_NUMBERS = [owner, rina].join(",");
+      const sendTo = async (to: string, body: string) => {
+        await fonnte(owner, `kirim ke ${to}: ${body}`);
+        await fonnte(owner, "1");
+      };
+      try {
+        // Budi asked about the service weeks ago, so he already has a row of his own with consent given.
+        await fonnte(budi, "halo", { name: "Budi" });
+        await fonnte(budi, "ini layanan apa ya?", { name: "Budi" });
+        assert.equal((await userByWa(budi))!.state, "PREBOARD");
+
+        await sendTo(budi, "Pak Budi, jadi rapat jam 4?");
+        assert.equal(
+          sentTo(budi).at(-1)!.text,
+          "Pak Budi, jadi rapat jam 4?\n\n_— Milo, asisten pribadi Josh. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._",
+        );
+        await fonnte(budi, "Oke jam 4 saya datang", { name: "Budi" });
+        assert.equal(last(owner)!.text, "💬 *Budi* membalas (6281244445555):\nOke jam 4 saya datang", "the reply reaches Josh, not the preboarding chat");
+
+        // MENU is how he leaves the thread and talks to Milo about the service itself.
+        await fonnte(budi, "MENU", { name: "Budi" });
+        assert.match(last(budi)!.text!, /Balas dengan angka/);
+        const quiet = sentTo(owner).length;
+        await fonnte(budi, "harganya berapa ya?", { name: "Budi" });
+        assert.equal(sentTo(owner).length, quiet, "that question is for Milo, and Josh is not disturbed by it");
+
+        await sendTo(budi, "sekalian bawa proposalnya ya");
+        await fonnte(budi, "siap", { name: "Budi" });
+        assert.equal(last(owner)!.text, "💬 *Budi* membalas (6281244445555):\nsiap", "a new message puts him back in the thread");
+
+        // Rina has an assistant of her own on the same number: hers keeps her chat, and is handed the message.
+        await sendTo(rina, "Bu Rina, bisa kirim draftnya hari ini?");
+        assert.equal(
+          sentTo(rina).at(-1)!.text,
+          "Bu Rina, bisa kirim draftnya hari ini?\n\n_— Milo, asisten pribadi Josh._",
+          "no promise to relay: her own assistant answers her",
+        );
+        const undisturbed = sentTo(owner).length;
+        await fonnte(rina, "ada pesan apa tadi?", { name: "Rina" });
+        assert.equal(sentTo(owner).length, undisturbed, "her chat is never forwarded to Josh");
+        assert.match(
+          agentTurns.at(-1)!,
+          /^\[Pesan masuk untuk pengguna dari Josh \(6282200000041\) lewat asistennya, .+: Bu Rina, bisa kirim draftnya hari ini\?\]\nada pesan apa tadi\?$/,
+        );
+        await fonnte(rina, "tadi apa isinya?", { name: "Rina" });
+        assert.doesNotMatch(agentTurns.at(-1)!, /Pesan masuk/, "her assistant is told once");
+
+        await fonnte(rina, `kirim ke ${owner}: Siap Pak Josh, sore ini saya kirim`);
+        await fonnte(rina, "1");
+        assert.equal(sentTo(owner).at(-1)!.text, "Siap Pak Josh, sore ini saya kirim\n\n_— Milo, asisten pribadi Rina._");
+        await fonnte(owner, "ada kabar dari Rina?");
+        assert.match(
+          agentTurns.at(-1)!,
+          /^\[Pesan masuk untuk pengguna dari Rina \(6282200000042\) lewat asistennya, .+: Siap Pak Josh, sore ini saya kirim\]\nada kabar dari Rina\?$/,
+        );
+      } finally {
+        config.SERVER_ADMIN_NUMBERS = "";
       }
     });
 

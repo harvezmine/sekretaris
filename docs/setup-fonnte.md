@@ -56,6 +56,25 @@ Dengan `MESSAGE_SEND_ACCESS=admin` (atau `all`), Milo bisa mengirim pesan ke kon
   angka 1) dalam 15 menit. Pesan itu diberi tanda "— Milo, asisten pribadi <nama>".
 - **Balasan diteruskan:** balasan penerima dalam `RELAY_REPLY_HOURS` jam diteruskan ke pengguna. Penerima tidak
   mendapat menu pendaftaran, dan diberi ucapan terima kasih sekali.
+
+#### Satu nomor, dua peran
+
+Nomor yang sama dipakai untuk melayani pengguna sendiri dan untuk mengirim pesan atas nama pengguna, jadi setiap
+pesan masuk harus jelas ditujukan ke siapa. Urutannya:
+
+1. Kata kunci (STOP, HAPUS, MULAI, MENU) selalu untuk layanan.
+2. **Penerima yang punya langganan sendiri** tidak pernah dialihkan: obrolannya tetap milik asistennya sendiri.
+   Pesan yang masuk untuknya dicatat, lalu disampaikan asistennya pada giliran berikutnya sebagai
+   `[Pesan masuk untuk pengguna dari ...]` — teks orang lain, bukan perintah. Kalau pengguna itu ingin menjawab,
+   asistennya mengirim balasan dengan `message_send`, yang tetap minta tombol **Kirim**.
+3. **Penerima yang bukan pengguna** dianggap sedang menjawab pesan itu selama thread masih aktif, apa pun status
+   obrolannya sebelumnya. Ini yang dulu salah: orang yang pernah bertanya-tanya soal layanan dikira sedang chat
+   dengan AI, padahal sedang membalas pesan pengguna.
+   - Keluar dari thread: ketik **MENU**. Waktunya disimpan di `state_data.serviceSince`, dan pesan berikutnya
+     kembali ke layanan sampai ada pesan baru yang dikirimkan untuknya.
+   - Kode undangan yang valid juga tetap diproses layanan, tanpa perlu MENU.
+- **Tanda tangan pesan:** penerima biasa dapat "Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan".
+  Penerima yang punya asisten sendiri tidak dijanjikan penerusan, karena asistennya yang menangani.
 - **Batasan:**
   - maksimal `MESSAGE_SEND_DAILY_LIMIT` pesan per 24 jam;
   - satu penerima per pesan;

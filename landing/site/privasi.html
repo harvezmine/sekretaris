@@ -4,17 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kebijakan privasi | Sekretaris AI</title>
-<meta name="description" content="Data apa yang disimpan Sekretaris AI, untuk apa, siapa yang memprosesnya, dan cara menghapusnya.">
-<meta name="theme-color" content="#0b0b0c">
+<meta name="description" content="Data apa yang disimpan Sekretaris AI, untuk apa, siapa yang ikut memprosesnya, dan bagaimana cara menghapusnya.">
+<meta name="theme-color" content="#08090a">
 <link rel="canonical" href="https://secretary.my.id/privasi.html">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f4f2ee'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='40' fill='%230b0b0c'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f4f2ee'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='40' fill='%230b0b0c'%3ES%3C/text%3E%3Ccircle cx='52' cy='52' r='9' fill='%2325d366' stroke='%230b0b0c' stroke-width='3'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <a class="skip" href="#isi">Langsung ke isi</a>
+<div class="progress" aria-hidden="true"></div>
+
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-wa" viewBox="0 0 24 24"><path fill="currentColor" d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.94 1.16-.18.2-.35.22-.65.08-.3-.15-1.26-.47-2.39-1.48-.88-.79-1.48-1.76-1.66-2.06-.17-.3-.02-.46.13-.6.14-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.08 4.49.7.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.08-.12-.28-.2-.58-.34m-5.42 7.4a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.44-9.89 9.89-9.89 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.89 6.99c0 5.45-4.43 9.89-9.89 9.89m8.42-18.3A11.82 11.82 0 0 0 12.05 0C5.5 0 .16 5.34.16 11.89c0 2.1.55 4.14 1.59 5.95L.06 24l6.3-1.65a11.88 11.88 0 0 0 5.69 1.45c6.55 0 11.89-5.34 11.89-11.89 0-3.18-1.24-6.17-3.48-8.42Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6 4.8 5.6v5.6c0 4.4 3 8.4 7.2 9.7 4.2-1.3 7.2-5.3 7.2-9.7V5.6z"/><path d="m9 11.8 2.3 2.3 4.2-4.4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.8v5.5l3.4 2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  </defs>
+</svg>
 
 <header class="nav">
   <div class="wrap">
@@ -22,16 +32,19 @@
       <span class="brand-mark" aria-hidden="true">S</span>
       <span class="brand-name">Sekretaris AI</span>
     </a>
-    <a class="btn btn-primary" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20punya%20pertanyaan%20soal%20data%20saya." rel="noopener">Tanya di WhatsApp</a>
+    <a class="btn btn-wa" href="https://wa.me/__WA_NUMBER__?text=Halo%2C%20saya%20punya%20pertanyaan%20soal%20data%20saya." rel="noopener">
+      <svg aria-hidden="true"><use href="#i-wa"/></svg>Tanya di WhatsApp
+    </a>
   </div>
 </header>
 
 <main id="isi" class="page">
   <div class="wrap">
+    <span class="eyebrow"><svg aria-hidden="true"><use href="#i-shield"/></svg>Kendali dan privasi</span>
     <h1>Kebijakan privasi</h1>
-    <p class="updated">Terakhir diperbarui 18 September 2026</p>
+    <p class="updated"><svg aria-hidden="true"><use href="#i-clock"/></svg>Terakhir diperbarui 18 September 2026</p>
 
-    <p>Halaman ini menjelaskan data apa yang disimpan Sekretaris AI saat Anda memakainya lewat WhatsApp, untuk apa data itu dipakai, siapa yang ikut memprosesnya, dan bagaimana Anda menghapusnya.</p>
+    <p>Halaman ini menjelaskan data apa yang disimpan Sekretaris AI saat Anda memakainya lewat WhatsApp, untuk apa data itu dipakai, siapa saja yang ikut memprosesnya, dan bagaimana Anda menghapusnya.</p>
 
     <h2>Data yang kami simpan</h2>
     <ul>
@@ -57,7 +70,7 @@
     </ul>
 
     <h2>Tindakan atas nama Anda</h2>
-    <p>Email, undangan rapat, pesan ke orang lain, dan perintah ke server tidak pernah dijalankan diam-diam. Semuanya ditampilkan lebih dulu dan baru dijalankan setelah Anda menekan tombol konfirmasi.</p>
+    <p>Email, undangan rapat, pesan ke orang lain, dan perintah ke server tidak pernah dijalankan diam-diam. Semuanya ditampilkan lebih dulu, dan baru dijalankan setelah Anda menekan tombol konfirmasi.</p>
 
     <h2>Menghapus data</h2>
     <p>Ketik <strong>HAPUS</strong> di WhatsApp kapan saja. Setelah Anda konfirmasi, percakapan, dokumen, catatan, kontak, dan pengingat Anda dihapus, dan akses ke akun Google Anda dicabut. Catatan transaksi pembayaran tetap kami simpan karena diwajibkan aturan perpajakan, tanpa tautan ke percakapan Anda.</p>
@@ -67,11 +80,16 @@
     <p>Pertanyaan tentang data Anda bisa dikirim langsung lewat WhatsApp ke nomor Sekretaris AI.</p>
 
     <p class="note">Kebijakan ini bisa diperbarui mengikuti perubahan layanan. Tanggal di atas menunjukkan perubahan terakhir.</p>
+
+    <div class="cta-row">
+      <a class="arrow-link" href="index.html">Kembali ke beranda<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </div>
   </div>
 </main>
 
-  <footer>
-    <div class="wrap">
+<footer>
+  <div class="wrap">
+    <div class="foot-bottom foot-simple">
       <a class="brand" href="index.html" aria-label="Sekretaris AI, beranda">
         <span class="brand-mark" aria-hidden="true">S</span>
         <span class="brand-name">Sekretaris AI</span>
@@ -81,8 +99,9 @@
         <a href="index.html#harga">Harga</a>
         <a href="privasi.html">Kebijakan privasi</a>
       </nav>
-      <span>© 2026 Sekretaris AI · secretary.my.id</span>
+      <span>&copy; 2026 Sekretaris AI &middot; secretary.my.id</span>
     </div>
-  </footer>
+  </div>
+</footer>
 </body>
 </html>

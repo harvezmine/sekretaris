@@ -1,26 +1,72 @@
 <!doctype html>
 <!-- Source of site/og.png, the picture WhatsApp and other apps show when someone shares secretary.my.id.
-     Render with: landing/og/render.sh -->
+     Keep the headline identical to the <h1> on the landing page. Render with: landing/og/render.sh -->
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400&family=Plus+Jakarta+Sans:wght@500;600;700&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=block">
 <style>
   html, body { margin: 0; width: 1200px; height: 630px; }
-  body { background: #0b0b0c; font-family: "Plus Jakarta Sans", system-ui, sans-serif; color: #f4f2ee;
-         display: flex; flex-direction: column; justify-content: space-between; padding: 72px 80px; box-sizing: border-box;
-         border-bottom: 1px solid rgba(255,255,255,.12); }
-  .brand { display: flex; align-items: center; gap: 16px; font-weight: 700; font-size: 30px; }
-  .mark { width: 52px; height: 52px; border-radius: 13px; background: #f4f2ee; color: #0b0b0c; display: grid; place-items: center;
-          font: italic 500 34px/1 "Newsreader", Georgia, serif; padding-bottom: 3px; box-sizing: border-box; }
-  h1 { font: 400 78px/1.02 "Newsreader", Georgia, serif; letter-spacing: -.025em; margin: 0; max-width: 960px; }
-  .foot { display: flex; justify-content: space-between; align-items: center; font-size: 24px; color: #8f8d88; font-weight: 500; }
-  .foot b { color: #46b98a; font-weight: 600; }
+  body {
+    position: relative; overflow: hidden; background: #08090a;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif; color: #f4f2ee;
+    display: flex; flex-direction: column; justify-content: space-between; padding: 68px 76px; box-sizing: border-box;
+  }
+  /* the same green sunrise as the hero, plus its grid */
+  .glow {
+    position: absolute; inset: -30% -18% auto auto; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(37,211,102,.34), transparent 70%); filter: blur(10px);
+  }
+  .grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(to right, rgba(255,255,255,.055) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(255,255,255,.055) 1px, transparent 1px);
+    background-size: 78px 78px;
+    -webkit-mask-image: radial-gradient(70% 70% at 62% 34%, #000, transparent 76%);
+  }
+  .row { position: relative; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 16px; font-weight: 800; font-size: 30px; letter-spacing: -.01em; }
+  .mark {
+    position: relative; width: 54px; height: 54px; border-radius: 15px; box-sizing: border-box; display: grid; place-items: center;
+    background: linear-gradient(160deg, #fbfaf8, #ddd9d1); color: #0b0b0c;
+    font: italic 500 35px/1 "Newsreader", Georgia, serif; padding-bottom: 3px;
+  }
+  .mark::after {
+    content: ""; position: absolute; right: -3px; bottom: -3px; width: 17px; height: 17px; border-radius: 50%;
+    background: #25d366; border: 3px solid #08090a; box-sizing: border-box;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 11px; padding: 11px 20px; border-radius: 999px;
+    background: rgba(37,211,102,.1); border: 1px solid rgba(37,211,102,.28); color: #4ce88a;
+    font-size: 19px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  }
+  .pill svg { width: 22px; height: 22px; display: block; }
+  h1 {
+    position: relative; font: 400 76px/1.03 "Newsreader", Georgia, serif; letter-spacing: -.028em; margin: 0; max-width: 940px;
+  }
+  h1 i { color: #4ce88a; }
+  .foot { position: relative; display: flex; justify-content: space-between; align-items: center; font-size: 23px; color: #868d89; font-weight: 600; }
+  .foot b { color: #f4f2ee; font-weight: 700; }
+  .foot .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #25d366; margin: 0 14px 2px; }
 </style>
 </head>
 <body>
-  <div class="brand"><span class="mark">S</span>Sekretaris AI</div>
-  <h1>Sekretaris harian Anda, bisa langsung diakses melalui WhatsApp.</h1>
-  <div class="foot"><span>Mulai Rp500.000 per bulan · coba gratis 14 hari</span><b>secretary.my.id</b></div>
+  <div class="glow"></div>
+  <div class="grid"></div>
+
+  <div class="row">
+    <div class="brand"><span class="mark">S</span>Sekretaris AI</div>
+    <span class="pill">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.94 1.16-.18.2-.35.22-.65.08-.3-.15-1.26-.47-2.39-1.48-.88-.79-1.48-1.76-1.66-2.06-.17-.3-.02-.46.13-.6.14-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.08 4.49.7.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.08-.12-.28-.2-.58-.34m-5.42 7.4a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.44-9.89 9.89-9.89 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.89 6.99c0 5.45-4.43 9.89-9.89 9.89m8.42-18.3A11.82 11.82 0 0 0 12.05 0C5.5 0 .16 5.34.16 11.89c0 2.1.55 4.14 1.59 5.95L.06 24l6.3-1.65a11.88 11.88 0 0 0 5.69 1.45c6.55 0 11.89-5.34 11.89-11.89 0-3.18-1.24-6.17-3.48-8.42Z"/></svg>
+      Di WhatsApp
+    </span>
+  </div>
+
+  <h1>Sekretaris harian Anda, <i>sejauh satu pesan</i> WhatsApp.</h1>
+
+  <div class="foot">
+    <span>Coba gratis 14 hari<span class="dot"></span>mulai Rp500.000 per bulan</span>
+    <b>secretary.my.id</b>
+  </div>
 </body>
 </html>

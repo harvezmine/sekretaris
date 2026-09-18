@@ -84,6 +84,7 @@ import {
   pendingDraftAfter,
   recordRelayReply,
   relayButtons,
+  takeUnseenInbox,
   takeUnseenReplies,
   type RelayRow,
 } from "./relay/service.js";
@@ -149,6 +150,27 @@ function findKeyword(batch: PendingMessage[]): Keyword | undefined {
   return KEYWORDS.find((k) => words.has(k));
 }
 
+/** States that only exist because the person is in the middle of something with Milo itself. */
+const SERVICE_STATES = new Set(["AWAITING_CODE", "AWAITING_PAYMENT", "SETUP", "CONFIRM_DELETE"]);
+
+/**
+ * Someone without their own assistant who has a message waiting is answering that message, not writing to Milo. They
+ * leave that conversation by typing MENU, which is what serviceSince records, or by sending an invite code.
+ */
+function turnedToService(user: UserRow, thread: RelayRow): boolean {
+  const since = user.stateData?.serviceSince;
+  return typeof since === "string" && new Date(since) > (thread.sentAt ?? new Date(0));
+}
+
+async function typedInviteCode(batch: PendingMessage[]): Promise<boolean> {
+  for (const { inbound } of batch) {
+    if (inbound.kind !== "text") continue;
+    const text = inbound.text.trim();
+    if (looksLikeCode(text) && (await findCode(text))) return true;
+  }
+  return false;
+}
+
 function lastOf<K extends Inbound["kind"]>(batch: PendingMessage[], kind: K): Extract<Inbound, { kind: K }> | undefined {
   for (let i = batch.length - 1; i >= 0; i--) {
     const inbound = batch[i]!.inbound;
@@ -193,9 +215,12 @@ export class Pipeline {
         return this.showMenu(user);
     }
 
-    if (!user.plan && !user.consentAt && (user.state === "NEW" || user.state === "MENU")) {
+    // One number serves two roles, so who a message belongs to is settled before anything else reads it.
+    if (!hasAccess(user) && !SERVICE_STATES.has(user.state)) {
       const thread = await activeThreadFor(user.waId);
-      if (thread) return this.forwardRelayReply(user, thread, batch);
+      if (thread && !turnedToService(user, thread) && !(await typedInviteCode(batch))) {
+        return this.forwardRelayReply(user, thread, batch);
+      }
     }
 
     const button = lastOf(batch, "button");
@@ -239,7 +264,8 @@ export class Pipeline {
       await this.showQuickMenu(updated);
       return;
     }
-    const updated = user.state === "PREBOARD" ? user : await updateUser(user.id, { state: "PREBOARD", stateData: {} });
+    // Opening the menu is how someone who is answering a message for another user turns to Milo instead.
+    const updated = await updateUser(user.id, { state: "PREBOARD", stateData: { serviceSince: new Date().toISOString() } });
     await this.d.outbox.buttons(updated, copy.TEXT.menuPrompt, this.menuFor(updated));
   }
 
@@ -611,7 +637,12 @@ export class Pipeline {
       (r) =>
         `[Balasan dari ${r.contactName ? `${r.contactName} (${r.fromWa})` : r.fromWa}, ${formatDateTime(r.createdAt, user.timezone)}: ${r.body}]`,
     );
-    notes.unshift(...replyNotes);
+    // Someone else wrote to the user through their own assistant, in this same chat: text from a third party.
+    const inboxNotes = (await takeUnseenInbox(user.id)).map(
+      (m) =>
+        `[Pesan masuk untuk pengguna dari ${m.fromName ? `${m.fromName} (${m.fromWa})` : m.fromWa} lewat asistennya, ${formatDateTime(m.createdAt, user.timezone)}: ${m.body}]`,
+    );
+    notes.unshift(...replyNotes, ...inboxNotes);
 
     const softMode = await this.softModeFor(user);
     const messaging = messageSendFor(user.waId);

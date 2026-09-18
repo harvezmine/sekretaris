@@ -111,7 +111,11 @@ export function relayReply(name: string, waId: string, body: string): string {
 }
 
 export function relayAck(assistantName: string, ownerName: string): string {
-  return `Terima kasih, pesan Anda sudah saya sampaikan ke ${ownerName}.\n\nSalam,\n${assistantName}`;
+  return [
+    `Terima kasih, pesan Anda sudah saya sampaikan ke ${ownerName}. Balasan berikutnya juga saya teruskan ke beliau.`,
+    `Kalau Anda ingin berbicara dengan saya soal layanan ini, ketik *MENU*.`,
+    `Salam,\n${assistantName}`,
+  ].join("\n\n");
 }
 
 export function uploadLink(url: string | undefined, hours: number): string {

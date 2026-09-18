@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { sql, type UserRow } from "../db/index.js";
+import { hasAccess } from "../payments/service.js";
 import { DEFAULT_ASSISTANT_NAME } from "../persona/catalog.js";
 import { isServerAdmin } from "../servers/registry.js";
 import type { Button, WhatsApp } from "../wa/client.js";
@@ -54,8 +55,17 @@ export function assistantLabel(owner: Pick<UserRow, "assistantName">): string {
   return owner.assistantName ?? DEFAULT_ASSISTANT_NAME;
 }
 
-export function composeRelayText(owner: Pick<UserRow, "displayName" | "assistantName">, body: string): string {
-  return `${body.trim()}\n\n_— ${assistantLabel(owner)}, asisten pribadi ${ownerLabel(owner)}. Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan._`;
+/**
+ * One WhatsApp number carries both roles, so the footer says which one is writing. A recipient who has an assistant
+ * of their own is not promised a relay: their own assistant picks the message up and offers to answer it.
+ */
+export function composeRelayText(
+  owner: Pick<UserRow, "displayName" | "assistantName">,
+  body: string,
+  opts: { toUser?: boolean } = {},
+): string {
+  const signature = `_— ${assistantLabel(owner)}, asisten pribadi ${ownerLabel(owner)}.`;
+  return `${body.trim()}\n\n${signature}${opts.toUser ? "" : " Balas pesan ini untuk menjawab; balasan Anda akan saya teruskan."}_`;
 }
 
 export function relayButtons(id: string): Button[] {
@@ -121,10 +131,12 @@ export async function confirmRelay(owner: UserRow, id: string, wa: WhatsApp): Pr
     return { status: "unavailable", row };
   }
   try {
-    const wamid = await wa.sendText(claimed.toWa, composeRelayText(owner, claimed.body));
+    const recipient = await activeRecipient(claimed.toWa);
+    const wamid = await wa.sendText(claimed.toWa, composeRelayText(owner, claimed.body, { toUser: Boolean(recipient) }));
     const [sent] = await sql<RelayRow[]>`
       update relay_messages set status = 'sent', wamid = ${wamid}, sent_at = now() where id = ${id} returning *
     `;
+    if (recipient) await noteInbox(recipient.id, sent!, owner);
     return { status: "sent", row: sent! };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -142,6 +154,39 @@ export async function cancelRelay(owner: UserRow, id: string): Promise<RelayRow 
     returning *
   `;
   return row;
+}
+
+/** A recipient who has an assistant of their own; their messages belong to it, so nothing here may take them over. */
+async function activeRecipient(toWa: string): Promise<UserRow | undefined> {
+  const [row] = await sql<UserRow[]>`select * from users where wa_id = ${toWa}`;
+  return row && row.state !== "OPTED_OUT" && hasAccess(row) ? row : undefined;
+}
+
+/** Waits for the recipient's own assistant to read out at their next turn, rather than interrupting them. */
+async function noteInbox(userId: string, thread: RelayRow, owner: Pick<UserRow, "displayName" | "waId">): Promise<void> {
+  await sql`
+    insert into relay_inbox (user_id, relay_id, from_wa, from_name, body)
+    values (${userId}, ${thread.id}, ${owner.waId}, ${ownerLabel(owner)}, ${thread.body})
+  `;
+}
+
+export interface InboxNote {
+  fromWa: string;
+  fromName: string | null;
+  body: string;
+  createdAt: Date;
+}
+
+/** Messages other people sent this user through their assistants, each handed to the model once. */
+export async function takeUnseenInbox(userId: string): Promise<InboxNote[]> {
+  return sql<InboxNote[]>`
+    with taken as (
+      update relay_inbox set seen_at = now()
+      where user_id = ${userId} and seen_at is null
+      returning id, from_wa, from_name, body, created_at
+    )
+    select from_wa, from_name, body, created_at from taken order by id
+  `;
 }
 
 /** The most recent message Milo sent to this number, if it is recent enough for a reply to belong to it. */
