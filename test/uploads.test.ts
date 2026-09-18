@@ -74,6 +74,8 @@ describe("upload links", () => {
     assert.equal(isInventedMiloLink(real, base), false);
     assert.equal(isInventedMiloLink(`${base}/u/rafaeljosh18`, base), true);
     assert.equal(isInventedMiloLink(`${base}/connect/${createUploadToken("21")}`, base), true, "an upload token does not open the Google page");
+    assert.equal(isInventedMiloLink(`${base}/l/${createUploadToken("21")}`, base), true, "nor the location page");
+    assert.equal(isInventedMiloLink(`${base}/l/lokasi-saya`, base), true);
     assert.equal(isInventedMiloLink("https://milo.id/u/rafaeljosh18", base), true);
     assert.equal(isInventedMiloLink("https://www.milo-ai.com/x", base), true);
     for (const fine of [`${base}/healthz`, "https://wa.me/6281234?text=halo", "https://www.reddit.com/u/milo", "https://docs.google.com/d/1", "https://camilo.dev"]) {

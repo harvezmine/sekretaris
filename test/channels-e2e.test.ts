@@ -146,7 +146,7 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
         select t.content::text as content from transcript t join sessions s on s.id = t.session_id
         where s.user_id = ${user.id} order by t.id
       `;
-      assert.match(noted[0]!.content, /tidak sampai\. Link unggah sudah dikirim/, "the model is told what happened");
+      assert.match(noted[0]!.content, /tidak sampai\. Link unggah dan cara kirim lokasi sudah dikirim/, "the model is told what happened");
 
       await fonnte(u, "FILE");
       const linkText = last(u)!.text!;
@@ -205,6 +205,50 @@ describe("channels and payment gateway", { skip: !enabled && "set TEST_DATABASE_
 
       await sql`update users set trial_ends_at = now() - interval '1 day' where id = ${user.id}`;
       assert.equal((await upload(tinyPdf("x"), "x.pdf")).statusCode, 404, "expired access closes the link");
+    });
+
+    test("a location reaches the assistant from WhatsApp, from a pasted Maps link, and from the LOKASI page", async () => {
+      const u = "6282200000012";
+      const user = await readyUser(u);
+      const place = async () => (await sql<{ profile: UserRow["profile"] }[]>`select profile from users where id = ${user.id}`)[0]!.profile.lastPlace;
+
+      await fonnte(u, "non-text message", { location: "-6.2607,106.8134" });
+      assert.match(agentTurns.at(-1)!, /^\[Lokasi dibagikan: tanpa nama \(-6\.2607, 106\.8134\)\. Tersimpan sebagai lokasi terakhir pengguna\.\]$/);
+      assert.equal((await place())!.lat, -6.2607);
+      assert.doesNotMatch(last(u)!.text!, /belum bisa saya terima/, "no more 'file not received' for a location");
+
+      await fonnte(u, "saya lagi di sini https://www.google.com/maps/place/Grand+Indonesia/@-6.1951,106.8200,17z");
+      assert.equal(
+        agentTurns.at(-1),
+        "[Lokasi dikenali dari pesan: Grand Indonesia (-6.1951, 106.82). Tersimpan sebagai lokasi terakhir pengguna.]\nsaya lagi di sini https://www.google.com/maps/place/Grand+Indonesia/@-6.1951,106.8200,17z",
+      );
+      assert.equal((await place())!.label, "Grand Indonesia");
+
+      const turnsBefore = agentTurns.length;
+      await fonnte(u, "lokasi");
+      const linkText = last(u)!.text!;
+      assert.equal(agentTurns.length, turnsBefore, "the keyword is answered without the model");
+      assert.match(linkText, /berlaku 30 menit/);
+      const url = /https:\/\/milo-uji\.trycloudflare\.com(\/l\/\S+)/.exec(linkText)![1]!;
+
+      const page = await ctx.app.inject({ url });
+      assert.equal(page.statusCode, 200);
+      assert.match(page.body, /Kirim lokasi saya/);
+      assert.match(String(page.headers["content-security-policy"]), /default-src 'none'/);
+
+      const send = (payload: unknown, target = url) => ctx.app.inject({ method: "POST", url: target, payload: payload as object });
+      const res = await send({ lat: -6.2, lng: 106.85 });
+      assert.equal(res.statusCode, 200, res.body);
+      await ctx.debouncer.drain();
+      assert.equal(agentTurns.at(-1), "[Lokasi dibagikan: lokasi Anda saat ini (-6.2, 106.85). Tersimpan sebagai lokasi terakhir pengguna.]");
+      assert.deepEqual({ lat: (await place())!.lat, lng: (await place())!.lng }, { lat: -6.2, lng: 106.85 });
+
+      assert.equal((await send({ lat: "di rumah", lng: 106.85 })).statusCode, 400);
+      const forged = url.replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+      assert.equal((await send({ lat: -6.2, lng: 106.85 }, forged)).statusCode, 404);
+      assert.equal((await ctx.app.inject({ url: `/u/${url.slice(3)}` })).statusCode, 404, "a location token does not open the upload page");
+      await sql`update users set trial_ends_at = now() - interval '1 day' where id = ${user.id}`;
+      assert.equal((await send({ lat: -6.2, lng: 106.85 })).statusCode, 404, "expired access closes the link");
     });
 
     test("messages to other people wait for Kirim, and replies are relayed to the owner", async () => {

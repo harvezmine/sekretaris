@@ -1,8 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "../config.js";
-import { sql, type UserRow } from "../db/index.js";
+import { getUser, sql, type UserRow } from "../db/index.js";
+import { rememberPlace } from "../maps/location.js";
+import { geocodeOsm, OsmError } from "../maps/osm.js";
 import { directionsUrl, mapsEnabled, PlacesError, searchPlaces, type TravelMode } from "../maps/places.js";
+import { LOCATION_LINK_MINUTES, locationUrlFor } from "../uploads/links.js";
 import type { ToolContext, ToolOutcome } from "./tools.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -12,6 +15,8 @@ const fail = (message: string): ToolOutcome => ({ content: message, isError: tru
 
 /** A shared location older than this is probably not where the user is standing any more. */
 const LOCATION_MAX_AGE_HOURS = 24 * 7;
+/** A route starts from the stored place only if it was just shared; otherwise Maps uses where the phone is now. */
+const ORIGIN_MAX_AGE_MINUTES = 60;
 
 const DEF: BetaTool = {
   name: "place_search",
@@ -56,9 +61,28 @@ export const DIRECTIONS_TOOL_DEF: BetaTool = {
   },
 };
 
+const LOCATION_SET: BetaTool = {
+  name: "location_set",
+  description:
+    "Remember where the user is when they say it in words: \"saya lagi di Grand Indonesia\", \"posisi saya di Bandung\". The place is looked up on the map and stored as their current location, so near=\"saya\" and directions start from it. Say which place was matched in a few words; if it looks wrong, ask them to be more specific or share their location.",
+  input_schema: {
+    type: "object",
+    properties: { place: { type: "string", description: "The place as they named it, with the city if they gave one." } },
+    required: ["place"],
+  },
+};
+
+/** Always available: a page link that needs no map provider, only the phone's own GPS. */
+export const LOCATION_LINK_TOOL_DEF: BetaTool = {
+  name: "location_link",
+  description:
+    "Get a private link that asks the user's phone for its current position. Offer it when you need their location and they have not shared one, or when a location they sent did not come through. Send the link as plain text; it is valid for 30 minutes. The user can also type LOKASI to get it.",
+  input_schema: { type: "object", properties: {} },
+};
+
 /** Only the lookup depends on a provider; the navigation link lives in the base tool set. */
 export function mapsToolDefs(): BetaTool[] {
-  return mapsEnabled() ? [DEF] : [];
+  return mapsEnabled() ? [DEF, LOCATION_SET] : [];
 }
 
 export const mapsInputs = {
@@ -75,9 +99,16 @@ export const mapsInputs = {
     destination: z.string().min(1).max(200),
     mode: z.enum(["driving", "walking", "transit"]).optional(),
   }),
+  location_set: z.object({ place: z.string().min(2).max(200) }),
+  location_link: z.object({}).loose(),
 } as const;
 
 type MapsToolName = keyof typeof mapsInputs;
+
+/** Read fresh: a location_set or shared location earlier in the same turn must already count. */
+async function lastPlaceOf(user: UserRow): Promise<NonNullable<UserRow["profile"]["lastPlace"]> | undefined> {
+  return (await getUser(user.id))?.profile?.lastPlace ?? user.profile?.lastPlace;
+}
 
 async function searchesToday(user: UserRow): Promise<number> {
   const [row] = await sql<{ n: string }[]>`
@@ -97,15 +128,15 @@ export const mapsHandlers: {
 
     let point: { lat: number; lng: number; label?: string; ageHours?: number } | undefined;
     if (near && /^(saya|aku|me|sini|dekat)/i.test(near.trim())) {
-      const last = user.profile?.lastPlace;
+      const last = await lastPlaceOf(user);
       if (!last) {
         return fail(
-          "Pengguna belum pernah membagikan lokasinya. Minta mereka kirim lokasi lewat menu lampiran WhatsApp (Location), atau sebutkan nama daerahnya di query.",
+          "Pengguna belum pernah membagikan lokasinya. Tawarkan tiga cara singkat: kirim lokasi lewat WhatsApp, tempel link Google Maps, atau buka link dari location_link. Kalau mereka menyebut tempatnya dengan kata-kata, simpan dengan location_set.",
         );
       }
       const ageHours = (Date.now() - new Date(last.at).getTime()) / 3_600_000;
       if (ageHours > LOCATION_MAX_AGE_HOURS) {
-        return fail("Lokasi terakhir yang dibagikan sudah lebih dari seminggu. Minta pengguna mengirim lokasinya lagi.");
+        return fail("Lokasi terakhir yang dibagikan sudah lebih dari seminggu. Minta lokasi yang baru: tawarkan location_link, atau mereka bisa menyebut tempatnya.");
       }
       point = { lat: last.lat, lng: last.lng, ...(last.label ? { label: last.label } : {}), ageHours: Math.round(ageHours) };
     }
@@ -133,16 +164,17 @@ export const mapsHandlers: {
   },
 
   async place_directions({ user }, { destination, mode }) {
-    const last = user.profile?.lastPlace;
-    const origin = last && Date.now() - new Date(last.at).getTime() < LOCATION_MAX_AGE_HOURS * 3_600_000
-      ? { lat: last.lat, lng: last.lng }
-      : undefined;
+    const last = await lastPlaceOf(user);
+    const age = last ? Date.now() - new Date(last.at).getTime() : Infinity;
+    // Picking the nearest branch can use a place from earlier in the week; the route itself should not.
+    const near = age < LOCATION_MAX_AGE_HOURS * 3_600_000 ? { lat: last!.lat, lng: last!.lng } : undefined;
+    const origin = age < ORIGIN_MAX_AGE_MINUTES * 60_000 ? near : undefined;
 
     // The link itself is free and always works; looking the place up first only makes it point at the right branch.
     let place: { name: string; address: string; id?: string } | undefined;
     if (mapsEnabled() && (await searchesToday(user)) < config.PLACE_SEARCHES_PER_DAY) {
       try {
-        const [found] = await searchPlaces({ query: destination, ...(origin ?? {}), max: 1 });
+        const [found] = await searchPlaces({ query: destination, ...(near ?? {}), max: 1 });
         if (found) place = found;
         await sql`insert into usage_ledger (user_id, kind, units) values (${user.id}, 'places', 1)`;
       } catch (err) {
@@ -162,5 +194,24 @@ export const mapsHandlers: {
       mode: mode ?? "driving",
       url,
     });
+  },
+
+  async location_set({ user }, { place }) {
+    if (!mapsEnabled()) return fail("Pencarian tempat dimatikan di Milo ini.");
+    try {
+      const found = await geocodeOsm(place);
+      if (!found) return fail(`"${place}" tidak ketemu di peta. Minta nama tempat yang lebih jelas, atau minta mereka membagikan lokasi.`);
+      await rememberPlace(user.id, { lat: found.lat, lng: found.lng, label: found.label });
+      return ok({ saved: found.label, lat: found.lat, lng: found.lng });
+    } catch (err) {
+      if (err instanceof OsmError) return fail(`Peta sedang tidak bisa dibuka: ${err.message}`);
+      throw err;
+    }
+  },
+
+  async location_link({ user }) {
+    const url = locationUrlFor(user.id);
+    if (!url) return fail("Link lokasi belum tersedia karena alamat publik Milo belum diketahui. Minta pengguna mengirim lokasi lewat WhatsApp.");
+    return ok({ url, valid_minutes: LOCATION_LINK_MINUTES });
   },
 };

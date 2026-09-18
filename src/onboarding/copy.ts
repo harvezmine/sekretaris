@@ -124,6 +124,17 @@ export function uploadLink(url: string | undefined, hours: number): string {
   ].join("\n");
 }
 
+/** LOKASI: the browser page, plus the two ways that need no link at all. */
+export function locationLink(url: string | undefined, minutes: number): string {
+  if (!url) return "Kirim lokasi lewat WhatsApp (📎 lalu Lokasi), atau tempel link Google Maps tempat Anda sekarang.";
+  return [
+    "📍 Buka link ini dan tekan *Kirim lokasi saya*:",
+    url,
+    "",
+    `Bisa juga tempel link Google Maps, atau sebut saja tempatnya. Link ini pribadi, berlaku ${minutes} menit.`,
+  ].join("\n");
+}
+
 /** A shared contact card that never arrived, or arrived as a file Milo cannot open. */
 export const CONTACT_CARD_MISSING =
   "👤 Kartu kontaknya belum bisa saya baca di nomor ini. Ketik saja nama dan nomornya — misalnya _simpan kontak Andi 0812-3456-7890, dia PM saya_ — langsung saya simpan.";
@@ -134,7 +145,7 @@ export function attachmentMissing(url: string | undefined): string {
     url
       ? `Kirim lewat link ini, dan tulis pertanyaannya (misalnya _tolong rangkum_) di kolom yang tersedia:\n${url}\n\n_Link pribadi, berlaku ${config.UPLOAD_LINK_HOURS} jam._`
       : "Ketik *FILE* untuk mendapatkan link pengiriman file.",
-    "Kalau tadi kartu kontak: ketik nama dan nomornya di sini, saya simpan.",
+    "Kalau tadi kartu kontak: ketik nama dan nomornya di sini, saya simpan. Kalau tadi lokasi: ketik *LOKASI*, atau sebut saja Anda sedang di mana.",
   ].join("\n\n");
 }
 
@@ -287,7 +298,7 @@ export function helpText(opts: { attachments: boolean; servers: boolean; google?
       ? ["", "*Google*", "• _agenda minggu ini_ · _cari waktu kosong 1 jam besok_", "• _email penting hari ini apa?_ · _balas email Andi, bilang oke_", "• _cari proposal di Drive_ · _simpan file tadi ke Drive_"]
       : []),
     "",
-    "Kata kunci: *MENU* pilihan cepat · *GAYA* ganti kepribadian · *FILE* kirim file · *KONEKSI* hubungkan akun · *HAPUS* hapus data · *STOP* berhenti",
+    "Kata kunci: *MENU* pilihan cepat · *GAYA* ganti kepribadian · *FILE* kirim file · *KONEKSI* hubungkan akun · *LOKASI* kirim lokasi · *HAPUS* hapus data · *STOP* berhenti",
   ].join("\n");
 }
 

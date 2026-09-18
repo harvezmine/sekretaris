@@ -4,6 +4,7 @@ import { runTool, toolsFor } from "../src/agent/tools.ts";
 import { mapsToolDefs } from "../src/agent/mapsTools.ts";
 import { config } from "../src/config.ts";
 import { migrate, sql, type UserRow } from "../src/db/index.ts";
+import { mightBePlace, placeFromText, readMapsUrl, useLocationHttp } from "../src/maps/location.ts";
 import { directionsUrl, distanceKm, placesProvider, searchPlaces, useMapsHttp } from "../src/maps/places.ts";
 import { nameScore, osmFilter, useOsmHttp } from "../src/maps/osm.ts";
 
@@ -64,6 +65,7 @@ function fakeOsm(reply: (url: string, body: string) => Response): { url: string;
 afterEach(() => {
   useMapsHttp(undefined);
   useOsmHttp(undefined);
+  useLocationHttp(undefined);
   Object.assign(config, { GOOGLE_MAPS_API_KEY: "", PLACES_PROVIDER: "auto" });
 });
 
@@ -123,7 +125,7 @@ describe("places", { skip: !dbEnabled && "set TEST_DATABASE_URL to run" }, () =>
 
     config.PLACES_PROVIDER = "auto";
     config.GOOGLE_MAPS_API_KEY = "maps-key";
-    assert.deepEqual(mapsToolDefs().map((t) => t.name), ["place_search"]);
+    assert.deepEqual(mapsToolDefs().map((t) => t.name), ["place_search", "location_set"]);
     fakeMaps(() => json({ error: { message: "This API key is not authorized" } }, 403));
     const out = await runTool({ user: user() }, "place_search", { query: "restoran" });
     assert.equal(out.isError, true);
@@ -284,5 +286,107 @@ describe("places", { skip: !dbEnabled && "set TEST_DATABASE_URL to run" }, () =>
       directionsUrl({ destination: "Bandara Soekarno-Hatta", mode: "transit" }),
       "https://www.google.com/maps/dir/?api=1&destination=Bandara+Soekarno-Hatta&travelmode=transit",
     );
+  });
+
+  test("a route starts from the stored place only when it was just shared", async () => {
+    config.PLACES_PROVIDER = "off";
+    const at = (minutesAgo: number) => user({ profile: { lastPlace: { ...KEMANG, label: "Kemang", at: new Date(Date.now() - minutesAgo * 60_000).toISOString() } } });
+    const route = async (u: UserRow) =>
+      JSON.parse(String((await runTool({ user: u }, "place_directions", { destination: "Monas" })).content)) as { from: string; url: string };
+
+    const fresh = await route(at(10));
+    assert.equal(new URL(fresh.url).searchParams.get("origin"), `${KEMANG.lat},${KEMANG.lng}`);
+    assert.equal(fresh.from, "Kemang");
+
+    const morning = await route(at(5 * 60));
+    assert.equal(new URL(morning.url).searchParams.get("origin"), null, "shared this morning at the office: Maps starts from the phone instead");
+    assert.equal(morning.from, "posisi pengguna saat membuka link");
+  });
+
+  test("a place said in words is stored, and a search in the same turn already uses it", async () => {
+    const osm = fakeOsm((url) =>
+      url.includes("nominatim")
+        ? json([{ lat: "-6.1951", lon: "106.8200", display_name: "Grand Indonesia, Jalan M.H. Thamrin, Jakarta" }])
+        : json({ elements: [{ lat: -6.1953, lon: 106.8205, tags: { name: "Kopi Thamrin", amenity: "cafe" } }] }),
+    );
+    // The model's copy of the user was loaded before location_set ran, so it has no place in it.
+    const before = user();
+    const set = JSON.parse(String((await runTool({ user: before }, "location_set", { place: "Grand Indonesia" })).content)) as { saved: string };
+    assert.equal(set.saved, "Grand Indonesia, Jalan M.H. Thamrin");
+    const [row] = await sql<{ profile: UserRow["profile"] }[]>`select profile from users where id = ${stored.id}`;
+    assert.deepEqual({ lat: row!.profile.lastPlace!.lat, lng: row!.profile.lastPlace!.lng }, { lat: -6.1951, lng: 106.82 });
+
+    const out = JSON.parse(String((await runTool({ user: before }, "place_search", { query: "kopi", near: "saya" })).content)) as {
+      around: string;
+      places: { name: string }[];
+    };
+    assert.equal(out.around, "Grand Indonesia, Jalan M.H. Thamrin");
+    assert.deepEqual(out.places.map((p) => p.name), ["Kopi Thamrin"]);
+    assert.match(osm.at(-1)!.body, /around%3A3000%2C-6\.1951%2C106\.82/);
+
+    fakeOsm(() => json([]));
+    const nowhere = await runTool({ user: before }, "location_set", { place: "Xyzzyland" });
+    assert.equal(nowhere.isError, true);
+    assert.match(String(nowhere.content), /tidak ketemu di peta/);
+    await sql`update users set profile = profile - 'lastPlace' where id = ${stored.id}`;
+  });
+
+  test("the location link is always offered, and only when Milo knows its own address", async () => {
+    config.PLACES_PROVIDER = "off";
+    assert.ok(toolsFor(user()).some((t) => t.name === "location_link"), "reading the phone's GPS needs no map provider");
+    assert.ok(!toolsFor(user()).some((t) => t.name === "location_set"), "turning words into a point does");
+
+    const unknown = await runTool({ user: user() }, "location_link", {});
+    assert.equal(unknown.isError, true);
+    config.PUBLIC_BASE_URL = "https://app.secretary.my.id";
+    try {
+      const link = JSON.parse(String((await runTool({ user: user() }, "location_link", {})).content)) as { url: string; valid_minutes: number };
+      assert.match(link.url, /^https:\/\/app\.secretary\.my\.id\/l\/\S+$/);
+      assert.equal(link.valid_minutes, 30);
+    } finally {
+      config.PUBLIC_BASE_URL = "";
+    }
+  });
+});
+
+describe("where the user is, from what they paste", () => {
+  test("Google Maps links are read for the exact pin, then the map centre, then the query", () => {
+    assert.deepEqual(
+      readMapsUrl("https://www.google.com/maps/place/Grand+Indonesia/@-6.1951,106.8200,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x1!8m2!3d-6.19512!4d106.82035"),
+      { lat: -6.19512, lng: 106.82035, label: "Grand Indonesia" },
+      "the pin, not the centre of the screen",
+    );
+    assert.deepEqual(readMapsUrl("https://www.google.com/maps/@-6.2607,106.8134,15z"), { lat: -6.2607, lng: 106.8134 });
+    assert.deepEqual(readMapsUrl("https://maps.google.com/?q=-6.2607,106.8134"), { lat: -6.2607, lng: 106.8134 });
+    assert.deepEqual(readMapsUrl("https://www.google.co.id/maps/search/?api=1&query=Sarinah+Thamrin"), { query: "Sarinah Thamrin" });
+    assert.deepEqual(readMapsUrl("https://www.google.com/maps/place/Monas"), { query: "Monas" });
+    assert.equal(readMapsUrl("https://www.google.com/maps/dir/?api=1&destination=Monas"), undefined, "where they are going, not where they are");
+    assert.equal(readMapsUrl("https://evil.example/maps/@-6.2,106.8,15z"), undefined);
+    assert.equal(readMapsUrl("https://www.google.com/maps/@0,0,3z"), undefined, "the empty world map is not a place");
+  });
+
+  test("short links are followed through Google only, and coordinates on their own count", async () => {
+    const asked: string[] = [];
+    useLocationHttp((async (input: string | URL | Request) => {
+      asked.push(String(input));
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://www.google.com/maps/place/Kota+Kasablanka/@-6.2242,106.8429,17z/data=!3d-6.22425!4d106.84291" },
+      });
+    }) as typeof fetch);
+    assert.deepEqual(await placeFromText("saya di sini ya https://maps.app.goo.gl/AbC123xyz"), { lat: -6.22425, lng: 106.84291, label: "Kota Kasablanka" });
+    assert.deepEqual(asked, ["https://maps.app.goo.gl/AbC123xyz"]);
+
+    useLocationHttp((async () => new Response(null, { status: 302, headers: { location: "https://phish.example/x" } })) as typeof fetch);
+    assert.equal(await placeFromText("https://maps.app.goo.gl/Evil"), undefined, "a short link that leaves Google is dropped");
+    useLocationHttp((async () => {
+      throw new Error("offline");
+    }) as typeof fetch);
+    assert.equal(await placeFromText("https://maps.app.goo.gl/Down"), undefined, "a failed lookup is no place, not an error");
+
+    assert.deepEqual(await placeFromText(" -6.2607, 106.8134 "), { lat: -6.2607, lng: 106.8134 });
+    assert.equal(mightBePlace("rapat jam 10.30, 11.00"), false, "times are not coordinates");
+    assert.equal(mightBePlace("tolong ingatkan saya besok"), false);
+    assert.equal(mightBePlace("https://maps.app.goo.gl/x"), true);
   });
 });

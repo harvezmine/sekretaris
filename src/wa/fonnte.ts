@@ -133,6 +133,28 @@ export function parseVCards(text: string): SharedContact[] {
 
 const FONNTE_PLACEHOLDER = /^non[- ]?text message$/i;
 
+/** "-6.2607,106.8134" (spaces allowed) into a point, or undefined for anything that is not a real coordinate. */
+export function parsePoint(raw: string): { lat: number; lng: number } | undefined {
+  const m = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(raw);
+  if (!m) return undefined;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return undefined;
+  return { lat, lng };
+}
+
+/**
+ * Which fields a webhook actually carried, without their values: when a message cannot be read, this is what
+ * tells the operator whether it was a file on the free package, a live location, or something new.
+ */
+export function fonnteFieldsPresent(body: unknown): string[] {
+  if (typeof body !== "object" || body === null) return [];
+  return Object.entries(body as Record<string, unknown>)
+    .filter(([, v]) => v !== "" && v !== null && v !== undefined && v !== 0 && v !== "0")
+    .map(([k]) => k)
+    .sort();
+}
+
 const str = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 
 /** Fonnte posts one JSON object per incoming message; group messages carry a `member` and are ignored. */
@@ -150,9 +172,14 @@ export function parseFonnteWebhook(body: unknown): InboundMessage[] {
   const timestamp = Number.isFinite(tsRaw) && tsRaw > 0 ? new Date(tsRaw > 1e12 ? tsRaw : tsRaw * 1000) : new Date();
 
   let inbound: Inbound;
+  // A shared location comes as "lat,long" in its own field, on every package, next to the same placeholder text
+  // Fonnte uses for files; it has to be read first or the placeholder would make it look like a dropped file.
+  const point = parsePoint(str(b.location));
   // Without the attachment feature, Fonnte forwards a file or photo as this placeholder text, with no caption.
   const attachmentDropped = !url && (FONNTE_PLACEHOLDER.test(message.trim()) || Boolean(filename || str(b.extension)));
-  if (attachmentDropped) {
+  if (point) {
+    inbound = { kind: "location", latitude: point.lat, longitude: point.lng };
+  } else if (attachmentDropped) {
     inbound = { kind: "unsupported", type: "fonnte-empty" };
   } else if (url) {
     const mime = MIME[extension];
@@ -165,9 +192,6 @@ export function parseFonnteWebhook(body: unknown): InboundMessage[] {
   } else if (/BEGIN:VCARD/i.test(message)) {
     const contacts = parseVCards(message);
     inbound = contacts.length ? { kind: "contacts", contacts } : { kind: "text", text: message };
-  } else if (str(b.location)) {
-    const [lat, lng] = str(b.location).split(",").map((x) => Number(x.trim()));
-    inbound = { kind: "location", latitude: lat ?? 0, longitude: lng ?? 0 };
   } else if (message) {
     inbound = { kind: "text", text: message };
   } else {

@@ -26,6 +26,7 @@ import {
   type SetupStep,
 } from "./onboarding/setup.js";
 import { preboardReply } from "./onboarding/preboard.js";
+import { mightBePlace, placeFromText, rememberPlace } from "./maps/location.js";
 import {
   actionButtons,
   cancelAction,
@@ -86,7 +87,7 @@ import {
   takeUnseenReplies,
   type RelayRow,
 } from "./relay/service.js";
-import { uploadUrlFor } from "./uploads/links.js";
+import { LOCATION_LINK_MINUTES, locationUrlFor, uploadUrlFor } from "./uploads/links.js";
 import { hasAccess, type Payments } from "./payments/service.js";
 import { sttEnabled, transcribe } from "./voice/transcribe.js";
 import type { WhatsApp } from "./wa/client.js";
@@ -497,9 +498,18 @@ export class Pipeline {
 
     for (const { inbound } of batch) {
       switch (inbound.kind) {
-        case "text":
-          if (inbound.text.trim()) questions.push(inbound.text.trim());
+        case "text": {
+          const text = inbound.text.trim();
+          if (!text) break;
+          // A Google Maps link pasted from the Share button, or bare coordinates, is a location too.
+          const place = mightBePlace(text) ? await placeFromText(text) : undefined;
+          if (place) {
+            await rememberPlace(user.id, place);
+            questions.push(`[Lokasi dikenali dari pesan: ${place.label ?? "tanpa nama"} (${place.lat}, ${place.lng}). Tersimpan sebagai lokasi terakhir pengguna.]`);
+          }
+          questions.push(text);
           break;
+        }
         case "button":
           questions.push(inbound.title);
           break;
@@ -566,16 +576,14 @@ export class Pipeline {
         case "location": {
           const label = [inbound.name, inbound.address].filter(Boolean).join(", ");
           // Kept so "restoran terdekat" still works in the next message, and removed with the rest of their data.
-          await updateProfile(user.id, {
-            lastPlace: { lat: inbound.latitude, lng: inbound.longitude, ...(label ? { label } : {}), at: new Date().toISOString() },
-          });
+          await rememberPlace(user.id, { lat: inbound.latitude, lng: inbound.longitude, ...(label ? { label } : {}) });
           questions.push(`[Lokasi dibagikan: ${label || "tanpa nama"} (${inbound.latitude}, ${inbound.longitude}). Tersimpan sebagai lokasi terakhir pengguna.]`);
           break;
         }
         case "unsupported":
           if (inbound.type === "fonnte-empty") {
             replies.push(copy.attachmentMissing(uploadUrlFor(user.id)));
-            notes.push("[Pengguna mengirim file/foto lewat WhatsApp, tapi file dan keterangannya tidak sampai. Link unggah sudah dikirim.]");
+            notes.push("[Pengguna mengirim file, foto, atau lokasi lewat WhatsApp, tapi isinya tidak sampai. Link unggah dan cara kirim lokasi sudah dikirim.]");
           } else if (inbound.type === "vcard-url") {
             replies.push(copy.CONTACT_CARD_MISSING);
             notes.push("[Pengguna membagikan kartu kontak, tapi isinya tidak bisa dibaca di kanal ini. Minta nama dan nomornya sebagai teks, lalu simpan dengan contact_save.]");
@@ -786,6 +794,8 @@ export class Pipeline {
         return this.replyStatic(user, note, copy.uploadLink(uploadUrlFor(user.id), config.UPLOAD_LINK_HOURS));
       case "connect":
         return this.showConnections(user);
+      case "location":
+        return this.replyStatic(user, note, copy.locationLink(locationUrlFor(user.id), LOCATION_LINK_MINUTES));
       case "style":
         return this.replyStatic(user, note, personaMenu(user.assistantName ?? DEFAULT_ASSISTANT_NAME, findPersona(user.persona)));
       case "help":

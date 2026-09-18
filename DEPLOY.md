@@ -412,6 +412,7 @@ diulang.
 | Cek server pengguna: "tidak bisa dibuka; SERVER_KEY_SECRET mungkin berubah" | `SERVER_KEY_SECRET` di `.env` harus sama persis dengan milik Mac. Ambil lagi dari arsip backup (file `env` di dalamnya). |
 | Login Google: `redirect_uri_mismatch` | Redirect URI di Google Cloud harus persis `https://app.secretary.my.id/google/callback`, dan `PUBLIC_BASE_URL` harus `https://app.secretary.my.id`. |
 | "Carikan restoran terdekat" tidak jalan | Pengguna harus pernah membagikan lokasi untuk "terdekat". Tanpa `GOOGLE_MAPS_API_KEY`, sumbernya OpenStreetMap (gratis) dan tidak ada rating. Cek `PLACES_PROVIDER` dan lihat [docs/setup-maps.md](docs/setup-maps.md). |
+| Share lokasi di WhatsApp tidak terbaca | `docker compose logs app \| grep "tidak terbaca"` menampilkan nama field dari Fonnte. Tanpa `location` di situ, minta pengguna mengetik *LOKASI* atau menempel link Google Maps. Lihat [docs/setup-maps.md](docs/setup-maps.md#lokasi-pengguna). |
 | `secretary.my.id` tidak terbuka atau 502 | Public hostname di tunnel harus `HTTP` → `landing:80` (bukan `localhost`). `docker compose ps landing` harus healthy. Lihat langkah 6C. |
 | Cloudflare menolak hostname `secretary.my.id` | Masih ada record DNS lama untuk `@` atau `www`. Hapus di DNS → Records, lalu tambahkan hostname lagi (langkah 6C). |
 | Tombol "Chat" di landing membuka WhatsApp tanpa tujuan | `LANDING_WA_NUMBER` di `.env` terisi nilai yang salah. Kosongkan untuk memakai nomor bawaan, lalu `docker compose up -d landing`. |

@@ -59,6 +59,14 @@ export function uploadUrlFor(userId: string): string | undefined {
   return base ? `${base}/u/${createUploadToken(userId)}` : undefined;
 }
 
+export const LOCATION_LINK_MINUTES = 30;
+
+/** A page that asks the phone's browser for its position: works whatever the WhatsApp line forwards. */
+export function locationUrlFor(userId: string): string | undefined {
+  const base = publicBaseUrl();
+  return base ? `${base}/l/${createSignedToken("location", userId, LOCATION_LINK_MINUTES * 60)}` : undefined;
+}
+
 /** Whether files sent inside WhatsApp reach Milo on this line. */
 export function directAttachments(): boolean {
   return config.WA_PROVIDER === "meta" || config.FONNTE_ATTACHMENTS;

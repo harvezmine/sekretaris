@@ -18,7 +18,8 @@ export type QuickAction =
   | "style"
   | "profile"
   | "help"
-  | "account";
+  | "account"
+  | "location";
 
 export const QUICK_ACTIONS = new Set<QuickAction>([
   "agenda",
@@ -31,6 +32,7 @@ export const QUICK_ACTIONS = new Set<QuickAction>([
   "profile",
   "help",
   "account",
+  "location",
 ]);
 
 export const QUICK_MENU_LABEL = "Pilih menu";
@@ -72,6 +74,7 @@ const KEYWORD_ACTIONS: [RegExp, QuickAction][] = [
   [/^(agenda|jadwal)( hari ini)?$/i, "agenda"],
   [/^(bantuan|help|contoh)$/i, "help"],
   [/^(koneksi|integrasi|google|hubungkan akun)$/i, "connect"],
+  [/^(lokasi|kirim lokasi|share ?loc|lokasi saya)$/i, "location"],
 ];
 
 export function keywordAction(text: string): QuickAction | undefined {

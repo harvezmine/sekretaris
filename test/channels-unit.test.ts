@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { InstanPayProvider, instanPaySignature } from "../src/payments/instanpay.ts";
 import { paymentCaption, type PaymentRow } from "../src/payments/service.ts";
 import { WhatsAppError } from "../src/wa/client.ts";
-import { FonnteClient, parseFonnteWebhook, parseVCards } from "../src/wa/fonnte.ts";
+import { FonnteClient, fonnteFieldsPresent, parseFonnteWebhook, parsePoint, parseVCards } from "../src/wa/fonnte.ts";
 import { matchMenuReply, renderMenu } from "../src/wa/menu.ts";
 
 type Call = { url: string; init: RequestInit };
@@ -111,6 +111,24 @@ test("Fonnte webhooks are normalized; group messages are ignored", () => {
     assert.deepEqual(parseFonnteWebhook(dropped)[0]!.inbound, { kind: "unsupported", type: "fonnte-empty" }, JSON.stringify(dropped));
   }
   assert.equal(parseFonnteWebhook({ sender: "62812", message: "ini bukan non-text message" })[0]!.inbound.kind, "text");
+});
+
+test("a location shared in WhatsApp is read even when Fonnte labels it a non-text message", () => {
+  const [shared] = parseFonnteWebhook({ sender: "62812", message: "non-text message", location: "-6.2607,106.8134" });
+  assert.deepEqual(shared!.inbound, { kind: "location", latitude: -6.2607, longitude: 106.8134 });
+  const [spaced] = parseFonnteWebhook({ sender: "62812", message: "", location: " -6.2607 , 106.8134 " });
+  assert.equal(spaced!.inbound.kind, "location");
+  const [junk] = parseFonnteWebhook({ sender: "62812", message: "non-text message", location: "undefined" });
+  assert.deepEqual(junk!.inbound, { kind: "unsupported", type: "fonnte-empty" }, "an empty location field is still a dropped message");
+
+  assert.deepEqual(parsePoint("-6.2607;106.8134"), { lat: -6.2607, lng: 106.8134 });
+  for (const bad of ["0,0", "95,10", "-6.2,190", "abc", "10.30, 11.00 rapat", ""]) assert.equal(parsePoint(bad), undefined, bad);
+
+  assert.deepEqual(
+    fonnteFieldsPresent({ sender: "62812", message: "non-text message", location: "", url: null, device: "628", token: "rahasia" }),
+    ["device", "message", "sender", "token"],
+    "names only, never values, so the log is safe to read",
+  );
 });
 
 test("contact cards shared as vCard text become contacts", () => {

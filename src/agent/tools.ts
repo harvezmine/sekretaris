@@ -35,7 +35,7 @@ import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/cli
 import { searchGoogleContacts } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { webHandlers, webInputs, webToolDefs } from "./webTools.js";
-import { DIRECTIONS_TOOL_DEF, mapsHandlers, mapsInputs, mapsToolDefs } from "./mapsTools.js";
+import { DIRECTIONS_TOOL_DEF, LOCATION_LINK_TOOL_DEF, mapsHandlers, mapsInputs, mapsToolDefs } from "./mapsTools.js";
 import { closeSessions } from "./session.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -131,6 +131,7 @@ export const TOOL_DEFS: BetaTool[] = (
       },
     },
     DIRECTIONS_TOOL_DEF,
+    LOCATION_LINK_TOOL_DEF,
     {
       name: "persona_set",
       description: [

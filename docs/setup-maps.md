@@ -85,12 +85,37 @@ Cek tagihan sesungguhnya di Google Cloud → Billing, dan pasang budget alert.
 
 ## Lokasi pengguna
 
-"Terdekat" butuh titik. Pengguna mengirim lokasinya lewat menu lampiran WhatsApp (*Location*), dan Milo menyimpan
-titik terakhir itu di profil pengguna (`profile.lastPlace`) supaya pertanyaan berikutnya tidak perlu kirim ulang.
+"Terdekat" butuh titik. Ada empat cara titik itu sampai, dan semuanya disimpan sebagai titik terakhir di profil
+pengguna (`profile.lastPlace`), supaya pertanyaan berikutnya tidak perlu kirim ulang:
 
-- Lokasi yang lebih tua dari 7 hari tidak dipakai; Milo minta dikirim ulang.
+1. **Share lokasi di WhatsApp** (📎 lalu *Lokasi*). Fonnte meneruskannya di field `location` ("lat,long"), bersama
+   teks pengganti `non-text message`. Milo membaca `location` lebih dulu, jadi pesan ini tidak lagi dianggap file
+   yang hilang.
+2. **Tempel link Google Maps**: tombol *Bagikan* di Maps menghasilkan `maps.app.goo.gl/...`. Milo mengikuti link
+   pendek itu (hanya lewat host Google) dan membaca titik pin-nya. Koordinat yang diketik saja
+   (`-6.2607, 106.8134`) juga dikenali.
+3. **Ketik LOKASI**: Milo mengirim link pribadi `/l/<token>` (berlaku 30 menit). Halamannya meminta izin GPS
+   browser HP, lalu titiknya masuk seperti lokasi yang dibagikan. Cara ini tidak bergantung pada apa yang
+   diteruskan Fonnte, jadi tetap jalan kalau cara 1 gagal. Butuh `PUBLIC_BASE_URL` atau webhook yang sudah pernah
+   masuk (untuk tahu alamat publiknya).
+4. **Sebut tempatnya**: "saya lagi di Grand Indonesia". Model memanggil `location_set`, yang mencari titiknya di
+   OpenStreetMap. Butuh pencarian tempat aktif (`PLACES_PROVIDER` bukan `off`).
+
+Aturan penyimpanan:
+
 - Tersimpan satu titik saja, bukan riwayat.
+- Lokasi yang lebih tua dari 7 hari tidak dipakai untuk "terdekat"; Milo minta yang baru.
+- Link navigasi memakai titik tersimpan sebagai titik awal hanya kalau dikirim dalam satu jam terakhir. Selebihnya
+  Google Maps mulai dari posisi HP saat link dibuka.
 - Ikut terhapus saat pengguna mengetik **HAPUS**, karena disimpan di baris pengguna itu sendiri.
-- Kalau pengguna belum pernah berbagi lokasi, Milo memakai nama daerah yang disebut ("di Kemang") atau memintanya.
 
-Di Fonnte paket Free, pesan lokasi diteruskan sebagai koordinat, jadi fitur ini jalan tanpa perlu paket berlampiran.
+### Kalau share lokasi di WhatsApp tetap tidak terbaca
+
+Setiap pesan Fonnte yang tidak bisa dibaca dicatat bersama *nama* field yang dikirim (tanpa isinya):
+
+```sh
+docker compose logs app | grep "tidak terbaca"
+```
+
+Kalau `location` tidak ada di daftar itu, Fonnte memang tidak meneruskan lokasinya (misalnya *live location*).
+Pakai cara 2, 3, atau 4; pengguna yang mengirimnya juga otomatis diberi tahu soal **LOKASI**.

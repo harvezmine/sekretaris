@@ -12,8 +12,9 @@ import { googleRoutes } from "./google/connect.js";
 import { Scheduler } from "./reminders/scheduler.js";
 import { rememberPublicHost } from "./uploads/links.js";
 import { uploadRoutes } from "./uploads/routes.js";
+import { locationRoutes } from "./maps/locationRoutes.js";
 import type { Button, WhatsApp } from "./wa/client.js";
-import { parseFonnteWebhook } from "./wa/fonnte.js";
+import { fonnteFieldsPresent, parseFonnteWebhook } from "./wa/fonnte.js";
 import { describeInbound, parseWebhook, type Inbound, type InboundMessage } from "./wa/inbound.js";
 import { matchMenuReply } from "./wa/menu.js";
 import { Outbox } from "./wa/outbox.js";
@@ -161,7 +162,11 @@ export async function buildApp(deps: AppDeps): Promise<App> {
       return reply.code(404).send({ error: "not found" });
     }
     rememberPublicHost(req.hostname);
-    await ingest(parseFonnteWebhook(req.body));
+    const parsed = parseFonnteWebhook(req.body);
+    if (parsed.some((m) => m.inbound.kind === "unsupported")) {
+      log.info({ fields: fonnteFieldsPresent(req.body) }, "pesan Fonnte tidak terbaca; ini field yang dikirim");
+    }
+    await ingest(parsed);
     return reply.code(200).send({ ok: true });
   });
 
@@ -182,6 +187,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
 
   await app.register(adminRoutes, { prefix: "/admin", payments });
   await app.register(uploadRoutes, { onQueued: (userId) => debouncer.poke(userId, config.MILO_DEBOUNCE_MS) });
+  await app.register(locationRoutes, { onQueued: (userId) => debouncer.poke(userId, 300) });
   await app.register(googleRoutes, { onConnected: (result) => pipeline.googleConnected(result) });
 
   return { app, pipeline, debouncer, payments, scheduler, outbox };
