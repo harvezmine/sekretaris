@@ -30,12 +30,12 @@ import { tinyPdf } from "./helpers.ts";
 
 const dbEnabled = Boolean(process.env.TEST_DATABASE_URL);
 const TZ = "Asia/Jakarta";
-const ALL_SCOPES = ["openid", "email", SCOPE.calendar, SCOPE.gmailSend, SCOPE.gmailRead, SCOPE.driveFile, SCOPE.driveRead];
+const ALL_SCOPES = ["openid", "email", SCOPE.calendar, SCOPE.gmailSend, SCOPE.gmailRead, SCOPE.driveFile, SCOPE.driveRead, SCOPE.contacts];
 
 Object.assign(config, {
   GOOGLE_CLIENT_ID: "cid.apps.googleusercontent.com",
   GOOGLE_CLIENT_SECRET: "google-client-secret",
-  GOOGLE_SERVICES: "calendar,gmail,drive",
+  GOOGLE_SERVICES: "calendar,gmail,drive,contacts",
   GOOGLE_GMAIL_READ: true,
   GOOGLE_DRIVE_FULL: true,
   PUBLIC_BASE_URL: "https://milo.example.com",
@@ -65,6 +65,8 @@ class FakeGoogle {
   files: Record<string, { meta: Record<string, unknown>; content?: Buffer; exportText?: string }> = {};
   uploads: string[] = [];
   folders: { id: string; appProperties: Record<string, string> }[] = [];
+  people: Record<string, unknown>[] = [];
+  warmups = 0;
 
   fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
@@ -153,6 +155,14 @@ class FakeGoogle {
       return json({ error: { message: "Not Found" } }, 404);
     }
 
+    if (url.host === "people.googleapis.com" && path === "/v1/people:searchContacts") {
+      const q = (url.searchParams.get("query") ?? "").toLowerCase();
+      this.warmups += q ? 0 : 1;
+      if (!q) return json({});
+      const hits = this.people.filter((p) => JSON.stringify(p).toLowerCase().includes(q));
+      return json({ results: hits.map((person) => ({ person })) });
+    }
+
     if (url.host === "www.googleapis.com" && path.startsWith("/drive/v3/files")) {
       const q = url.searchParams.get("q") ?? "";
       if (method === "GET" && path === "/drive/v3/files") {
@@ -188,12 +198,13 @@ class FakeGoogle {
 describe("Google pieces that need no database", () => {
   test("scopes follow configuration, and grants map back to services", () => {
     assert.ok(googleEnabled());
-    assert.deepEqual(enabledServices(), ["calendar", "gmail", "drive"]);
+    assert.deepEqual(enabledServices(), ["calendar", "gmail", "drive", "contacts"]);
     assert.deepEqual(scopesFor("gmail"), [SCOPE.gmailSend, SCOPE.gmailRead]);
     try {
       Object.assign(config, { GOOGLE_GMAIL_READ: false, GOOGLE_DRIVE_FULL: false, GOOGLE_SERVICES: "calendar,drive" });
       assert.deepEqual(scopesFor("gmail"), [SCOPE.gmailSend]);
       assert.deepEqual(scopesFor("drive"), [SCOPE.driveFile]);
+      assert.deepEqual(scopesFor("contacts"), [SCOPE.contacts]);
       assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), [
         "calendar_create",
         "calendar_delete",
@@ -206,7 +217,7 @@ describe("Google pieces that need no database", () => {
         "google_disconnect",
       ]);
     } finally {
-      Object.assign(config, { GOOGLE_GMAIL_READ: true, GOOGLE_DRIVE_FULL: true, GOOGLE_SERVICES: "calendar,gmail,drive" });
+      Object.assign(config, { GOOGLE_GMAIL_READ: true, GOOGLE_DRIVE_FULL: true, GOOGLE_SERVICES: "calendar,gmail,drive,contacts" });
     }
     assert.deepEqual(servicesGranted([SCOPE.calendar, SCOPE.gmailSend]), ["calendar"], "gmail needs both scopes while read is on");
     assert.equal(googleToolDefs().length, 12);
@@ -348,7 +359,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
   };
 
   const connect = async (userId: string, scopes = ALL_SCOPES, email = "josh@gmail.com") => {
-    const url = new URL(await beginAuth(userId, ["calendar", "gmail", "drive"]));
+    const url = new URL(await beginAuth(userId, ["calendar", "gmail", "drive", "contacts"]));
     fake.grant = { scopes, email, challenge: url.searchParams.get("code_challenge")! };
     return completeAuth(url.searchParams.get("state")!, "good-code");
   };
@@ -379,11 +390,11 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     for (const answer of ["lewati", "lewati"]) await say(u, answer);
     const step = last(u);
     assert.equal(step.type, "text", "the last question is asked in words, not as a list to tap");
-    assert.match(step.text!, /sambungkan ke Google Anda \(kalender, email, Drive\)/);
+    assert.match(step.text!, /sambungkan ke Google Anda \(kalender, email, Drive, kontak\)/);
 
     await say(u, "boleh");
     const [linkMsg, done] = out(u).slice(-2);
-    assert.match(linkMsg!.text!, /^🔗 \*Hubungkan Google Kalender, Gmail, Google Drive\*\nhttps:\/\/milo\.example\.com\/connect\//);
+    assert.match(linkMsg!.text!, /^🔗 \*Hubungkan Google Kalender, Gmail, Google Drive, Google Kontak\*\nhttps:\/\/milo\.example\.com\/connect\//);
     assert.match(done!.text!, /Ada yang bisa saya bantu/);
     assert.equal((await byWa(u)).state, "READY");
 
@@ -391,14 +402,14 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     const page = await ctx.app.inject({ url: `${link.pathname}${link.search}` });
     assert.equal(page.statusCode, 200);
     assert.match(page.body, /Hubungkan Google ke Milo/);
-    assert.equal((page.body.match(/type="checkbox" name="s" value="\w+" checked/g) ?? []).length, 3);
+    assert.equal((page.body.match(/type="checkbox" name="s" value="\w+" checked/g) ?? []).length, 4);
     assert.match(String(page.headers["content-security-policy"]), /form-action 'self' https:\/\/accounts\.google\.com/);
 
     const none = await ctx.app.inject({ url: `${link.pathname}/start` });
     assert.match(none.body, /Pilih minimal satu/);
     assert.equal((await ctx.app.inject({ url: `${link.pathname.replace(/.$/, "x")}/start?s=calendar` })).statusCode, 404);
 
-    const start = await ctx.app.inject({ url: `${link.pathname}/start?s=calendar&s=gmail&s=drive` });
+    const start = await ctx.app.inject({ url: `${link.pathname}/start?s=calendar&s=gmail&s=drive&s=contacts` });
     assert.equal(start.statusCode, 302);
     const auth = new URL(String(start.headers.location));
     assert.equal(auth.origin + auth.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
@@ -415,7 +426,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.equal(callback.statusCode, 200);
     assert.match(callback.body, /Google terhubung sebagai josh@gmail\.com/);
     const confirmed = last(u).text!;
-    assert.match(confirmed, /^✅ Google terhubung \(josh@gmail\.com\): Google Kalender, Gmail, Google Drive\./);
+    assert.match(confirmed, /^✅ Google terhubung \(josh@gmail\.com\): Google Kalender, Gmail, Google Drive, Google Kontak\./);
     assert.match(confirmed, /agenda saya minggu ini apa\?/);
     const [account] = await sql<{ email: string; refreshTokenEnc: string; scopes: string[] }[]>`
       select email, refresh_token_enc, scopes from google_accounts ga join users u on u.id = ga.user_id where u.wa_id = ${u}
@@ -428,11 +439,11 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     const user = await byWa(u);
     assert.ok(toolsFor(user).some((t) => t.name === "gmail_send"));
-    assert.match(await buildSnapshot(user), /Google: josh@gmail\.com; access: calendar \(read and edit events\); gmail \(search and read, send after confirmation\); drive \(search and read all files, save files\)/);
+    assert.match(await buildSnapshot(user), /Google: josh@gmail\.com; access: calendar \(read and edit events\); gmail \(search and read, send after confirmation\); drive \(search and read all files, save files\); contacts \(look up the user's own Google contacts\)/);
 
     await say(u, "koneksi");
     const connections = last(u);
-    assert.match(connections.text!, /Google: ✅ josh@gmail\.com — Google Kalender, Gmail, Google Drive\./);
+    assert.match(connections.text!, /Google: ✅ josh@gmail\.com — Google Kalender, Gmail, Google Drive, Google Kontak\./);
     assert.deepEqual(connections.buttons!.map((b) => b.id), ["conn:google:disconnect"]);
   });
 
@@ -441,11 +452,11 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     const result = await connect(u.id, ["openid", "email", SCOPE.calendar], "rina@gmail.com");
     assert.deepEqual(result.granted, ["calendar"]);
     await ctx.pipeline.googleConnected(result);
-    assert.match(last(u.waId).text!, /Google Kalender\.\n⚠️ Gmail, Google Drive belum diizinkan/);
+    assert.match(last(u.waId).text!, /Google Kalender\.\n⚠️ Gmail, Google Drive, Google Kontak belum diizinkan/);
     const denied = await runTool({ user: u }, "gmail_search", { query: "invoice" });
     assert.match(String(denied.content), /belum terhubung\. Panggil google_connect/);
     await say(u.waId, "koneksi");
-    assert.deepEqual(last(u.waId).buttons!.map((b) => b.id), ["conn:google:gmail", "conn:google:drive", "conn:google:disconnect"]);
+    assert.deepEqual(last(u.waId).buttons!.map((b) => b.id), ["conn:google:gmail", "conn:google:drive", "conn:google:contacts", "conn:google:disconnect"]);
   });
 
   test("calendar: agenda, free time, and invitations or deletions only after a tap", async () => {
@@ -654,6 +665,39 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     await runTool({ user: u }, "drive_save", { capture_id: doc.capture_id });
     assert.equal(fake.folders.length, 1, "the Milo folder is reused");
     assert.match(String((await runTool({ user: u }, "drive_save", { capture_id: 999999 })).content), /Tidak ada file #999999/);
+  });
+
+  test("contacts: a name the user never saved is found in their Google contacts and kept", async () => {
+    const u = await readyUser("6284400000007");
+    await connect(u.id);
+    fake.people = [
+      {
+        names: [{ displayName: "Andi Prasetyo" }],
+        phoneNumbers: [{ value: "0812-3333-4444", canonicalForm: "+6281233334444" }],
+        emailAddresses: [{ value: "andi@vendor.co.id" }],
+        organizations: [{ name: "Vendor Jaya", title: "Project Manager" }],
+      },
+      { names: [{ displayName: "Andi Tanpa Nomor" }] },
+    ];
+
+    const found = JSON.parse(String((await runTool({ user: u }, "contact_find", { query: "andi" })).content)) as {
+      from: string;
+      contacts: { id: number; name: string; phone: string; organization: string }[];
+    };
+    assert.equal(found.from, "Google Kontak");
+    assert.deepEqual(
+      found.contacts.map((c) => [c.name, c.phone, c.organization]),
+      [["Andi Prasetyo", "6281233334444", "Vendor Jaya — Project Manager"]],
+      "a contact with no way to reach them is not offered",
+    );
+    assert.equal(fake.warmups, 1, "Google's contact search is warmed up first");
+
+    const again = JSON.parse(String((await runTool({ user: u }, "contact_find", { query: "andi" })).content)) as { id: number; phone: string }[];
+    assert.equal(again[0]!.phone, "6281233334444", "the second lookup is answered from Milo's own contacts");
+    assert.equal(again[0]!.id, found.contacts[0]!.id, "and it is the same person, not a copy");
+    assert.equal(fake.warmups, 1, "Google is not called again");
+
+    assert.match(String((await runTool({ user: u }, "contact_find", { query: "siapa pun" })).content), /Tidak ada kontak yang cocok/);
   });
 
   test("expired logins are reported once, stale tokens refresh, and disconnect or HAPUS revokes", async () => {

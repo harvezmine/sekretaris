@@ -42,10 +42,10 @@ const DEFS: Record<string, { service: GoogleService | "any"; def: BetaTool }> = 
     def: {
       name: "google_connect",
       description:
-        "Get a private link for the user to connect their Google account (calendar, gmail, drive), add a service, or sign in again after access expired. Omit services to offer all. Send the link as plain text and say it is valid for 30 minutes. Also returns what is connected now.",
+        "Get a private link for the user to connect their Google account (calendar, gmail, drive, contacts), add a service, or sign in again after access expired. Omit services to offer all. Send the link as plain text and say it is valid for 30 minutes. Also returns what is connected now.",
       input_schema: {
         type: "object",
-        properties: { services: { type: "array", items: { type: "string", enum: ["calendar", "gmail", "drive"] } } },
+        properties: { services: { type: "array", items: { type: "string", enum: ["calendar", "gmail", "drive", "contacts"] } } },
       },
     },
   },
@@ -206,7 +206,7 @@ export function googleToolDefs(): BetaTool[] {
 const isoInput = z.string().min(10).max(40);
 
 export const googleInputs = {
-  google_connect: z.object({ services: z.array(z.enum(["calendar", "gmail", "drive"])).max(3).optional() }),
+  google_connect: z.object({ services: z.array(z.enum(["calendar", "gmail", "drive", "contacts"])).max(4).optional() }),
   google_disconnect: z.object({}).loose(),
   calendar_events: z.object({ from: isoInput.optional(), to: isoInput.optional(), query: z.string().max(200).optional() }),
   calendar_create: z.object({

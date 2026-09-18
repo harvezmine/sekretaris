@@ -47,10 +47,12 @@ function serviceDetail(service: GoogleService): string {
       return config.GOOGLE_DRIVE_FULL
         ? "Cari dan baca dokumen di Drive, dan simpan file dari WhatsApp ke folder Milo."
         : "Simpan file dari WhatsApp ke folder Milo di Drive, dan baca file yang dibuat Milo.";
+    case "contacts":
+      return "Cari nomor dan email orang dari kontak Google Anda, jadi Anda tidak perlu mengetik nomornya. Hanya dibaca, tidak diubah.";
   }
 }
 
-const EMOJI: Record<GoogleService, string> = { calendar: "📅", gmail: "📧", drive: "📁" };
+const EMOJI: Record<GoogleService, string> = { calendar: "📅", gmail: "📧", drive: "📁", contacts: "👤" };
 
 function connectPage(opts: { assistantName: string; expiresText: string; token: string; selected: GoogleService[]; note?: string }): string {
   const rows = enabledServices()

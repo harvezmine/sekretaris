@@ -11,6 +11,8 @@ Yang ada di POC ini:
 - **Agent Claude** dengan 10 tool (file tersimpan, pengingat, kontak, fakta, draf pesan, status akun), prompt cache
   1 jam, dan fallback server-side.
 - **Debounce 4 detik**: pesan beruntun digabung jadi satu giliran.
+- **Google Kontak**: nama yang belum pernah disimpan dicari di kontak Google pengguna, lalu disimpan sendiri, jadi
+  tidak perlu mengetik nomor atau membagikan kartu kontak.
 - **Pengingat**, sekali jalan atau berulang (harian, mingguan pada hari tertentu, bulanan, tahunan), yang menghormati
   jendela 24 jam WhatsApp. Kejadian berikutnya dijadwalkan setelah yang sekarang terkirim, jadi selalu ada satu baris
   aktif per seri; yang terlewat saat app mati dilewati, bukan dikirim menumpuk.

@@ -244,7 +244,7 @@ ke `https://app.secretary.my.id/pay/webhook`, dan IP publik home server ditambah
 ## 8. Opsional: koneksi Google (Kalender, Gmail, Drive)
 
 Langkah ini butuh 6A. 👤 Pengguna mengikuti [docs/setup-google.md](docs/setup-google.md) di Google Cloud Console:
-- aktifkan API Kalender, Gmail, dan Drive;
+- aktifkan API Kalender, Gmail, Drive, dan **People API** (untuk Google Kontak);
 - set consent screen ke *External, Testing*, lalu tambahkan Gmail pengguna sebagai test user;
 - buat OAuth Client (Web) dengan redirect URI `https://app.secretary.my.id/google/callback`.
 
@@ -364,6 +364,7 @@ diulang.
 | `server-milo` gagal dicek | `docker compose ps dockerproxy` dan `ls -l /var/run/docker.sock`. |
 | Cek server pengguna: "tidak bisa dibuka; SERVER_KEY_SECRET mungkin berubah" | `SERVER_KEY_SECRET` di `.env` harus sama persis dengan milik Mac. Ambil lagi dari arsip backup (file `env` di dalamnya). |
 | Login Google: `redirect_uri_mismatch` | Redirect URI di Google Cloud harus persis `https://app.secretary.my.id/google/callback`, dan `PUBLIC_BASE_URL` harus `https://app.secretary.my.id`. |
+| Kontak Google tidak ketemu | People API belum diaktifkan di Google Cloud, atau scope `contacts.readonly` belum dicentang saat login. Ketik *KONEKSI* untuk login ulang. |
 | Login Google: "Akses diblokir" | Gmail pengguna belum ditambahkan sebagai test user. |
 | Milo membalas dengan link wa.me, bukan mengirim sendiri | `docker compose exec app node dist/cli.js status <nomor pengguna>`. Baris "Kirim ke orang lain" harus AKTIF. Kalau MATI: isi `MESSAGE_SEND_ACCESS=all`, atau tambahkan nomor itu ke `SERVER_ADMIN_NUMBERS`, lalu `docker compose up -d app`. |
 | Pencarian internet gagal | `docker compose logs searxng --tail 20`. Mesin pencari kadang membatasi; isi `TAVILY_API_KEY` sebagai cadangan, atau kosongkan `SEARXNG_URL` untuk mematikan fitur. |

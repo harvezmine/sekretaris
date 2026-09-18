@@ -151,7 +151,7 @@ export function paidActivated(planLabel: string, until: Date, timeZone: string):
 export const SETUP = {
   callName: (name: string | undefined) => `Sebelum mulai — saya panggil Anda apa?${name ? ` ${name} juga boleh.` : ""}`,
   work: "Oke. Sehari-hari Anda kerja apa? Biar saya nyambung kalau Anda cerita soal kerjaan.",
-  connect: "Terakhir: mau saya sambungkan ke Google Anda (kalender, email, Drive)? Kalau mau, saya kirim linknya.",
+  connect: "Terakhir: mau saya sambungkan ke Google Anda (kalender, email, Drive, kontak)? Kalau mau, saya kirim linknya.",
   retryCallName: "Panggilan yang lebih singkat, ya — misalnya Pak Josh atau Bos.",
   retryWork: "Singkat saja, satu kalimat.",
   paused: "Oke, kenalannya nanti saja.",
@@ -226,7 +226,7 @@ export function helpText(opts: { attachments: boolean; servers: boolean; google?
     "• _catat: omzet cabang Kemang bulan ini 120 juta_",
     "",
     "*Orang & pesan*",
-    "• bagikan kartu kontak, lalu _ini PM saya_",
+    "• _kontak Andi berapa?_ (dari Google Kontak Anda) · _simpan Andi 0812-xxxx, dia PM saya_",
     "• _kabari PM saya, laporan dikirim besok_ (saya yang kirim, setelah Anda setujui)",
     "",
     "*Tentang Anda*",

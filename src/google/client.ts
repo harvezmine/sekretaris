@@ -10,8 +10,8 @@ import { publicBaseUrl } from "../uploads/links.js";
  * Google refuses the refresh token (weekly in Testing mode).
  */
 
-export type GoogleService = "calendar" | "gmail" | "drive";
-export const ALL_SERVICES: readonly GoogleService[] = ["calendar", "gmail", "drive"];
+export type GoogleService = "calendar" | "gmail" | "drive" | "contacts";
+export const ALL_SERVICES: readonly GoogleService[] = ["calendar", "gmail", "drive", "contacts"];
 
 export const SCOPE = {
   calendar: "https://www.googleapis.com/auth/calendar.events",
@@ -19,6 +19,7 @@ export const SCOPE = {
   gmailRead: "https://www.googleapis.com/auth/gmail.readonly",
   driveFile: "https://www.googleapis.com/auth/drive.file",
   driveRead: "https://www.googleapis.com/auth/drive.readonly",
+  contacts: "https://www.googleapis.com/auth/contacts.readonly",
 } as const;
 
 export const ENDPOINTS = {
@@ -28,6 +29,7 @@ export const ENDPOINTS = {
   calendar: "https://www.googleapis.com/calendar/v3",
   gmail: "https://gmail.googleapis.com/gmail/v1",
   drive: "https://www.googleapis.com/drive/v3",
+  people: "https://people.googleapis.com/v1",
   driveUpload: "https://www.googleapis.com/upload/drive/v3",
 } as const;
 
@@ -35,6 +37,7 @@ export const SERVICE_LABEL: Record<GoogleService, string> = {
   calendar: "Google Kalender",
   gmail: "Gmail",
   drive: "Google Drive",
+  contacts: "Google Kontak",
 };
 
 type Fetch = typeof fetch;
@@ -64,6 +67,8 @@ export function scopesFor(service: GoogleService): string[] {
       return [SCOPE.gmailSend, ...(config.GOOGLE_GMAIL_READ ? [SCOPE.gmailRead] : [])];
     case "drive":
       return [SCOPE.driveFile, ...(config.GOOGLE_DRIVE_FULL ? [SCOPE.driveRead] : [])];
+    case "contacts":
+      return [SCOPE.contacts];
   }
 }
 
@@ -364,5 +369,6 @@ export function describeAccess(account: Pick<GoogleAccount, "scopes">): string[]
   if (has(SCOPE.driveRead) || has(SCOPE.driveFile)) {
     out.push(`drive (${has(SCOPE.driveRead) ? "search and read all files" : "only files Milo created"}${has(SCOPE.driveFile) ? ", save files" : ""})`);
   }
+  if (has(SCOPE.contacts)) out.push("contacts (look up the user's own Google contacts)");
   return out;
 }

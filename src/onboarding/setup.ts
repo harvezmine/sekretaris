@@ -104,6 +104,7 @@ export const CONNECT_ROWS: Record<GoogleService, Button> = {
   calendar: { id: "conn:google:calendar", title: "📅 Google Kalender", description: "Agenda, jadwal, dan undangan rapat" },
   gmail: { id: "conn:google:gmail", title: "📧 Gmail", description: "Cari, baca, dan balas email" },
   drive: { id: "conn:google:drive", title: "📁 Google Drive", description: "Cari dan simpan dokumen" },
+  contacts: { id: "conn:google:contacts", title: "👤 Google Kontak", description: "Cari nomor orang tanpa mengetik nomornya" },
 };
 
 export function parseConnectChoice(text: string): ConnectChoice | undefined {
@@ -112,6 +113,7 @@ export function parseConnectChoice(text: string): ConnectChoice | undefined {
   if (/kalender|calendar|jadwal/.test(t)) return "calendar";
   if (/gmail|e-?mail|surel/.test(t)) return "gmail";
   if (/drive|dokumen/.test(t)) return "drive";
+  if (/kontak|contact/.test(t)) return "contacts";
   if (/server/.test(t)) return "server";
   return undefined;
 }

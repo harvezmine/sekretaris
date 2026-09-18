@@ -27,6 +27,8 @@ import { errorMessage, formatDate, formatDateTime, normalizePhone } from "../uti
 import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../relay/service.js";
 import { uploadUrlFor } from "../uploads/links.js";
 import { normalizeCallName, normalizeWork, parseClock, updateProfile } from "../profile/profile.js";
+import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
+import { searchGoogleContacts } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { webHandlers, webInputs, webToolDefs } from "./webTools.js";
 import { closeSessions } from "./session.js";
@@ -82,7 +84,8 @@ export const TOOL_DEFS: BetaTool[] = (
     },
     {
       name: "contact_find",
-      description: "Find people the user has saved, by name, nickname/role (e.g. 'PM') or phone number.",
+      description:
+        "Find a person by name, nickname/role (e.g. 'PM') or phone number. Searches the people the user has saved here, and — when Google Contacts is connected — their own Google contacts, saving what it finds. Always try this before asking the user for a number.",
       input_schema: {
         type: "object",
         properties: { query: { type: "string" } },
@@ -416,6 +419,47 @@ export async function quotaState(user: UserRow): Promise<{ used: number; limit: 
   return { used: turns, limit, exceeded: turns >= limit };
 }
 
+interface ContactInput {
+  name: string;
+  phone: string | null;
+  alias: string | null;
+  email: string | null;
+}
+
+/** One person per phone number; a contact without a number is matched by name instead. */
+async function saveContact(user: UserRow, c: ContactInput): Promise<string | undefined> {
+  if (c.phone) {
+    const [row] = await sql<{ id: string }[]>`
+      insert into contacts (user_id, name, alias, phone, email)
+      values (${user.id}, ${c.name}, ${c.alias}, ${c.phone}, ${c.email})
+      on conflict (user_id, phone) do update
+        set name = excluded.name,
+            alias = coalesce(excluded.alias, contacts.alias),
+            email = coalesce(excluded.email, contacts.email)
+      returning id
+    `;
+    return row?.id;
+  }
+  const [existing] = await sql<{ id: string }[]>`
+    select id from contacts where user_id = ${user.id} and lower(name) = lower(${c.name}) order by id desc limit 1
+  `;
+  if (existing) {
+    await sql`update contacts set alias = coalesce(${c.alias}, alias), email = coalesce(${c.email}, email) where id = ${existing.id}`;
+    return existing.id;
+  }
+  const [row] = await sql<{ id: string }[]>`
+    insert into contacts (user_id, name, alias, email) values (${user.id}, ${c.name}, ${c.alias}, ${c.email}) returning id
+  `;
+  return row?.id;
+}
+
+/** Whether this user's Google contacts can be searched right now. */
+async function googleContactsReady(user: UserRow): Promise<boolean> {
+  if (!googleEnabled()) return false;
+  const account = await getAccount(user.id);
+  return account?.status === "active" && account.scopes.includes(SCOPE.contacts);
+}
+
 const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inputs)[K]>) => Promise<ToolOutcome> } = {
   ...googleHandlers,
   ...webHandlers,
@@ -513,44 +557,38 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
         and (name ilike ${like} or alias ilike ${like} ${digits ? sql`or phone = ${digits}` : sql``})
       order by id desc limit 10
     `;
-    if (!rows.length) return ok(`Tidak ada kontak yang cocok dengan "${query}".`);
-    return ok(rows.map((r) => ({ id: Number(r.id), name: r.name, alias: r.alias, phone: r.phone, email: r.email })));
+    if (rows.length) return ok(rows.map((r) => ({ id: Number(r.id), name: r.name, alias: r.alias, phone: r.phone, email: r.email })));
+
+    // Nobody is saved here yet: the user's Google contacts are the address book they already keep.
+    if (await googleContactsReady(user)) {
+      try {
+        const found = await searchGoogleContacts(user.id, query);
+        if (found.length) {
+          const saved = await Promise.all(
+            found.map(async (c) => ({
+              id: Number(await saveContact(user, { name: c.name, phone: c.phone, alias: null, email: c.email })),
+              name: c.name,
+              phone: c.phone,
+              email: c.email,
+              organization: c.organization,
+            })),
+          );
+          return ok({ from: "Google Kontak", saved_to_user_contacts: true, contacts: saved });
+        }
+      } catch (err) {
+        if (err instanceof GoogleAuthError) {
+          return ok(`Tidak ada kontak tersimpan yang cocok dengan "${query}", dan Google Kontak tidak terbaca karena login kedaluwarsa.`);
+        }
+        throw err;
+      }
+    }
+    return ok(`Tidak ada kontak yang cocok dengan "${query}".`);
   },
 
   async contact_save({ user }, { name, phone, alias, email }) {
     const normalized = phone ? normalizePhone(phone) : null;
     if (phone && !normalized) return fail(`Nomor "${phone}" tidak valid.`);
-    let id: string | undefined;
-    if (normalized) {
-      const [row] = await sql<{ id: string }[]>`
-        insert into contacts (user_id, name, alias, phone, email)
-        values (${user.id}, ${name}, ${alias ?? null}, ${normalized}, ${email ?? null})
-        on conflict (user_id, phone) do update
-          set name = excluded.name,
-              alias = coalesce(excluded.alias, contacts.alias),
-              email = coalesce(excluded.email, contacts.email)
-        returning id
-      `;
-      id = row?.id;
-    } else {
-      const [existing] = await sql<{ id: string }[]>`
-        select id from contacts where user_id = ${user.id} and lower(name) = lower(${name}) order by id desc limit 1
-      `;
-      if (existing) {
-        await sql`
-          update contacts set alias = coalesce(${alias ?? null}, alias), email = coalesce(${email ?? null}, email)
-          where id = ${existing.id}
-        `;
-        id = existing.id;
-      } else {
-        const [row] = await sql<{ id: string }[]>`
-          insert into contacts (user_id, name, alias, email)
-          values (${user.id}, ${name}, ${alias ?? null}, ${email ?? null})
-          returning id
-        `;
-        id = row?.id;
-      }
-    }
+    const id = await saveContact(user, { name, phone: normalized, alias: alias ?? null, email: email ?? null });
     return ok({ saved: true, id: Number(id), name, alias: alias ?? null, phone: normalized });
   },
 

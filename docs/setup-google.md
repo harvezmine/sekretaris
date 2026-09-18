@@ -1,4 +1,4 @@
-# Menghubungkan Google (Kalender, Gmail, Drive)
+# Menghubungkan Google (Kalender, Gmail, Drive, Kontak)
 
 Pengguna menghubungkan akun Google-nya sendiri lewat WhatsApp. Ada tiga jalan: langkah terakhir perkenalan,
 **MENU → Koneksi akun**, atau kata kunci **KONEKSI**. Milo mengirim link pribadi yang berlaku 30 menit. Di halaman
@@ -12,6 +12,7 @@ melihat password pengguna.
 | Gmail | cari & baca email, simpan lampiran | `gmail.readonly` | **restricted** |
 | Drive | simpan file ke folder "Milo", baca file buatan Milo | `drive.file` | non-sensitif |
 | Drive | cari & baca semua file | `drive.readonly` | **restricted** |
+| Kontak | cari nomor & email orang dari kontak Google pengguna | `contacts.readonly` | sensitif |
 
 **Tidak ada yang terkirim atau terhapus tanpa persetujuan pengguna.** Mengirim email, mengirim undangan kalender,
 dan menghapus acara selalu menunggu pengguna menekan tombol konfirmasi di WhatsApp. Tombol itu ditangani Milo
@@ -33,7 +34,7 @@ Untuk proyek ini: alamat Milo `https://app.secretary.my.id`, authorized domain `
 Buka [console.cloud.google.com](https://console.cloud.google.com) dengan akun Google milik bisnis Anda.
 
 1. **Buat project**, misalnya `Milo`.
-2. **APIs & Services → Library.** Aktifkan **Google Calendar API**, **Gmail API**, dan **Google Drive API**.
+2. **APIs & Services → Library.** Aktifkan **Google Calendar API**, **Gmail API**, **Google Drive API**, dan **People API** (untuk kontak).
 3. **Google Auth Platform → Branding** (dulu "OAuth consent screen"):
    - **App name:** `Milo`.
    - **User support email** dan **Developer contact:** email Anda.
@@ -44,7 +45,7 @@ Buka [console.cloud.google.com](https://console.cloud.google.com) dengan akun Go
    - **Test users → Add users:** tambahkan setiap Gmail yang akan menghubungkan Milo. Maksimal 100 alamat, dan
      tiap alamat harus ditambahkan manual.
 5. **Data Access → Add or remove scopes:** tambahkan `…/auth/calendar.events`, `…/auth/gmail.send`,
-   `…/auth/gmail.readonly`, `…/auth/drive.file`, dan `…/auth/drive.readonly`.
+   `…/auth/gmail.readonly`, `…/auth/drive.file`, `…/auth/drive.readonly`, dan `…/auth/contacts.readonly`.
 6. **Clients → Create client:**
    - **Application type:** Web application. **Name:** `Milo server`.
    - **Authorized redirect URIs:** `https://app.secretary.my.id/google/callback`. Harus sama persis, tanpa garis
