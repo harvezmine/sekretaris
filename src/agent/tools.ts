@@ -35,7 +35,8 @@ import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/cli
 import { searchGoogleContacts } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { notionHandlers, notionInputs, notionToolDefs } from "./notionTools.js";
-import { webHandlers, webInputs, webToolDefs } from "./webTools.js";
+import { MARKET_TOOL_DEF, webHandlers, webInputs, webToolDefs, YOUTUBE_TOOL_DEF } from "./webTools.js";
+import { youtubeEnabled } from "../youtube/search.js";
 import { DIRECTIONS_TOOL_DEF, LOCATION_LINK_TOOL_DEF, mapsHandlers, mapsInputs, mapsToolDefs } from "./mapsTools.js";
 import { addRule, forgetRule } from "../profile/rules.js";
 import { closeSessions } from "./session.js";
@@ -150,6 +151,7 @@ export const TOOL_DEFS: BetaTool[] = (
     },
     DIRECTIONS_TOOL_DEF,
     LOCATION_LINK_TOOL_DEF,
+    MARKET_TOOL_DEF,
     {
       name: "persona_set",
       description: [
@@ -343,8 +345,9 @@ export function toolsFor(user: UserRow): BetaTool[] {
   const web = webToolDefs();
   const maps = mapsToolDefs();
   const notion = notionToolDefs();
-  if (!servers && !messaging && !google.length && !web.length && !maps.length && !notion.length) return TOOL_DEFS;
-  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${web.length ? "w" : ""}${maps.length ? "p" : ""}${notion.length ? "n" : ""}${google.map((t) => t.name).join(",")}`;
+  const youtube = youtubeEnabled() ? [YOUTUBE_TOOL_DEF] : [];
+  if (!servers && !messaging && !google.length && !web.length && !maps.length && !notion.length && !youtube.length) return TOOL_DEFS;
+  const key = `${servers ? "s" : ""}${messaging ? "m" : ""}${web.length ? "w" : ""}${maps.length ? "p" : ""}${notion.length ? "n" : ""}${youtube.length ? "y" : ""}${google.map((t) => t.name).join(",")}`;
   let tools = toolSets.get(key);
   if (!tools) {
     tools = [
@@ -355,6 +358,7 @@ export function toolsFor(user: UserRow): BetaTool[] {
       ...web,
       ...maps,
       ...notion,
+      ...youtube,
     ].sort(byName);
     toolSets.set(key, tools);
   }

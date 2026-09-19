@@ -2,6 +2,7 @@ import { extractTextFrom } from "../capture/extract.js";
 import { config } from "../config.js";
 import { resolvePublicHost, type AddressPolicy } from "../servers/keys.js";
 import { htmlToText, pageTitle, readableText } from "./html.js";
+import { renderEnabled, renderPage, THIN_PAGE_CHARS, tidyRendered } from "./render.js";
 
 /**
  * Live web access for the model: a search through the operator's own SearXNG (or Tavily as a fallback) and a
@@ -163,6 +164,20 @@ export async function readPage(raw: string, policy?: AddressPolicy): Promise<Pag
   }
 
   const limit = config.WEB_READ_MAX_CHARS;
+  // A page drawn entirely by JavaScript answers a plain fetch with a shell. Rather than tell the user the page is
+  // empty when their browser shows a full one, it is read once more through the rendering proxy.
+  if (text.trim().length < THIN_PAGE_CHARS && renderEnabled()) {
+    try {
+      const rendered = await renderPage(res.url || url.toString());
+      const drawn = tidyRendered(rendered.text);
+      if (drawn.length > text.trim().length) {
+        title = rendered.title || title;
+        text = drawn;
+      }
+    } catch {
+      // The direct read stands; a fallback that fails changes nothing.
+    }
+  }
   return {
     url: res.url || url.toString(),
     title: title || hostOf(res.url || url.toString()),

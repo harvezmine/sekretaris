@@ -51,6 +51,13 @@ const schema = z
     SEARXNG_URL: z.string().default(""),
     TAVILY_API_KEY: z.string().default(""),
     WEB_SEARCH_MAX_RESULTS: z.coerce.number().int().min(1).max(20).default(6),
+    /** Reads JavaScript-only pages through r.jina.ai when a direct fetch comes back empty. */
+    WEB_RENDER_FALLBACK: z.stringbool().default(true),
+    JINA_API_KEY: z.string().default(""),
+    MARKET_SEARCHES_PER_DAY: z.coerce.number().int().min(0).max(200).default(20),
+    /** Kuota gratis YouTube 10.000 unit/hari dibagi semua pengguna, dan satu pencarian 100 unit. */
+    YOUTUBE_API_KEY: z.string().default(""),
+    YOUTUBE_SEARCHES_PER_DAY: z.coerce.number().int().min(0).max(50).default(5),
     /** auto = Google Places when a key is set, OpenStreetMap otherwise. off turns place search off entirely. */
     PLACES_PROVIDER: z.enum(["auto", "google", "osm", "off"]).default("auto"),
     /** Google Places (server API key, not OAuth). Billed per search; leave empty to stay on OpenStreetMap. */

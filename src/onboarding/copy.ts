@@ -324,6 +324,8 @@ export function helpText(opts: { attachments: boolean; servers: boolean; google?
     "*Dokumen & catatan*",
     opts.attachments ? "• kirim PDF/foto, lalu _poin pentingnya apa?_" : "• ketik *FILE*, unggah PDF/foto, lalu _poin pentingnya apa?_",
     "• _cari kontrak vendor B yang kemarin_",
+    "• _cek harga iPhone 15 di Tokopedia_",
+    "• _carikan video cara bikin laporan keuangan UMKM_",
     "• _catat: omzet cabang Kemang bulan ini 120 juta_",
     "",
     "*Orang & pesan*",

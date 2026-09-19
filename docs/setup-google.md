@@ -18,6 +18,19 @@ melihat password pengguna.
 | Tasks | lihat, tambah, dan centang tugas di Google Tasks | `tasks` | sensitif |
 | Formulir | buat form pesanan/absensi/survei dan baca jawabannya | `forms.body` + `forms.responses.readonly` + `drive.file` | sensitif |
 
+## Pencarian YouTube (tanpa OAuth)
+
+Ini terpisah dari semua di atas: datanya publik, jadi cukup API key, bukan login pengguna.
+
+1. **APIs & Services → Library:** aktifkan **YouTube Data API v3**.
+2. **Credentials → Create credentials → API key.** Batasi key itu ke YouTube Data API v3 saja.
+3. Isi `YOUTUBE_API_KEY` di `.env`.
+
+Kuota gratisnya 10.000 unit per hari untuk seluruh layanan, dan satu pencarian memakan 100 unit. Artinya sekitar
+seratus pencarian sehari dibagi semua pengguna, karena itu ada `YOUTUBE_SEARCHES_PER_DAY` (bawaan 5) per pengguna.
+Yang bisa dicari hanya judul, channel, durasi, dan jumlah tayangan. Transkrip video tidak tersedia lewat API resmi
+kecuali videonya milik pengguna sendiri, jadi "ringkas video ini" belum bisa dijanjikan.
+
 ## Dua hal yang perlu diketahui
 
 **Google Tasks hanya menyimpan tanggal, bukan jam.** API-nya membuang bagian jam dari tenggat. Karena itu pengingat
