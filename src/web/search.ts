@@ -59,14 +59,14 @@ interface SearxngResponse {
   results?: { title?: string; url?: string; content?: string; engine?: string; publishedDate?: string | null }[];
 }
 
-async function searchSearxng(query: string, max: number, recent: boolean): Promise<SearchHit[]> {
+async function searchSearxng(query: string, max: number, recent: boolean, category = "general"): Promise<SearchHit[]> {
   const url = new URL(`${config.SEARXNG_URL.replace(/\/+$/, "")}/search`);
   url.search = new URLSearchParams({
     q: query,
     format: "json",
     language: "id",
     safesearch: "0",
-    categories: "general",
+    categories: category,
     ...(recent ? { time_range: "month" } : {}),
   }).toString();
   const res = await http(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
@@ -123,6 +123,62 @@ export async function searchWeb(query: string, opts: { max?: number; recent?: bo
   if (config.TAVILY_API_KEY) return searchTavily(text, max, recent);
   if (firstError) throw new SearchError(`pencarian gagal: ${firstError instanceof Error ? firstError.message : String(firstError)}`);
   throw new SearchError("pencarian internet belum diaktifkan");
+}
+
+export interface VideoHit {
+  title: string;
+  url: string;
+  /** SearXNG reports a length in seconds, when the engine that answered knew one. */
+  seconds?: number;
+  snippet: string;
+}
+
+/**
+ * The operator's own SearXNG has a videos category, and YouTube is one of the engines behind it. That makes a
+ * keyless video search possible on infrastructure that is already running, with less detail than the official
+ * API but no quota and no credential.
+ */
+export async function searchVideoHits(query: string, max = 5): Promise<VideoHit[]> {
+  if (!config.SEARXNG_URL) throw new SearchError("pencarian video butuh SearXNG atau kunci YouTube");
+  const raw = await http(videoSearchUrl(query), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+  if (!raw.ok) throw new SearchError(`mesin pencari menjawab HTTP ${raw.status}`);
+  const json = (await raw.json()) as { results?: { title?: string; url?: string; content?: string; length?: number | string }[] };
+  return (json.results ?? [])
+    .filter((r) => r.url && /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(r.url))
+    .slice(0, max)
+    .map((r) => {
+      const seconds = lengthInSeconds(r.length);
+      return {
+        title: clean(r.title ?? "").replace(/\s*-\s*YouTube$/i, ""),
+        url: r.url!,
+        ...(seconds ? { seconds } : {}),
+        snippet: clean(r.content ?? "").slice(0, 300),
+      };
+    });
+}
+
+/**
+ * Each engine behind the videos category states a length its own way: plain seconds from one, "12:41" from
+ * another, "12.06" for twelve minutes six from a third. Read wrongly, a twenty minute video becomes twelve seconds.
+ */
+export function lengthInSeconds(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  const clock = /^(?:(\d+)[:.])?(\d{1,2})[:.](\d{2})$/.exec(text);
+  if (clock) {
+    const [h, m, sec] = [Number(clock[1] ?? 0), Number(clock[2]), Number(clock[3])];
+    const total = h * 3600 + m * 60 + sec;
+    return total > 0 ? total : undefined;
+  }
+  const plain = Number(text);
+  return Number.isFinite(plain) && plain > 0 ? Math.round(plain) : undefined;
+}
+
+function videoSearchUrl(query: string): URL {
+  const url = new URL(`${config.SEARXNG_URL.replace(/\/+$/, "")}/search`);
+  url.search = new URLSearchParams({ q: query.trim(), format: "json", language: "id", safesearch: "0", categories: "videos" }).toString();
+  return url;
 }
 
 export async function readPage(raw: string, policy?: AddressPolicy): Promise<PageText> {

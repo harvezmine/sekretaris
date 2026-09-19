@@ -5,7 +5,7 @@ import { sql } from "../db/index.js";
 import { MarketError, searchMarket } from "../market/search.js";
 import { readPage, searchWeb, SearchError, webSearchEnabled } from "../web/search.js";
 import { renderEnabled } from "../web/render.js";
-import { searchVideos, youtubeEnabled, YoutubeError } from "../youtube/search.js";
+import { searchVideos, youtubeAvailable, YoutubeError } from "../youtube/search.js";
 import { ServerSetupError } from "../servers/keys.js";
 import type { ToolContext, ToolOutcome } from "./tools.js";
 
@@ -70,7 +70,7 @@ export const YOUTUBE_TOOL_DEF: BetaTool = {
   name: "youtube_search",
   description: [
     "Find videos on YouTube: a tutorial, a talk, a product review, a recording the user half-remembers. Returns title, channel, length, views and the link.",
-    "Give them one or two that actually fit, with the length so they know what they are committing to, and the link as plain text. Never claim to have watched a video: you can see what it is called, not what it says.",
+    "Give them one or two that actually fit, with the length so they know what they are committing to, and the link as plain text. The channel and view count are there only on some setups; say what you have rather than guessing the rest. Never claim to have watched a video: you can see what it is called, not what it says.",
   ].join("\n\n"),
   input_schema: {
     type: "object",
@@ -113,7 +113,7 @@ export const webHandlers: {
   [K in keyof typeof webInputs]: (ctx: ToolContext, input: z.infer<(typeof webInputs)[K]>) => Promise<ToolOutcome>;
 } = {
   async youtube_search({ user }, { query, max }) {
-    if (!youtubeEnabled()) return fail("Pencarian YouTube belum diaktifkan di Milo ini.");
+    if (!youtubeAvailable()) return fail("Pencarian YouTube belum diaktifkan di Milo ini.");
     const [row] = await sql<{ n: string }[]>`
       select count(*) as n from usage_ledger where user_id = ${user.id} and kind = 'youtube' and created_at > now() - interval '1 day'
     `;

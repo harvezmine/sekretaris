@@ -5,8 +5,8 @@ import { config } from "../src/config.ts";
 import { migrate, sql, type UserRow } from "../src/db/index.ts";
 import { parseListings, searchMarket, searchUrl } from "../src/market/search.ts";
 import { renderedBody, tidyRendered, useRenderHttp } from "../src/web/render.ts";
-import { readPage, useWebHttp } from "../src/web/search.ts";
-import { readDuration, searchVideos, useYoutubeHttp } from "../src/youtube/search.ts";
+import { lengthInSeconds, readPage, useWebHttp } from "../src/web/search.ts";
+import { readDuration, searchVideos, useYoutubeHttp, youtubeAvailable } from "../src/youtube/search.ts";
 
 const dbEnabled = Boolean(process.env.TEST_DATABASE_URL);
 
@@ -79,6 +79,16 @@ describe("reading marketplaces through the rendering proxy", () => {
 });
 
 describe("finding a video", () => {
+  test("every way an engine states a length is read the same way", () => {
+    assert.equal(lengthInSeconds(1319.0), 1319, "detik apa adanya");
+    assert.equal(lengthInSeconds("12:41"), 761, "menit dan detik");
+    assert.equal(lengthInSeconds("1:02:11"), 3731, "jam, menit, detik");
+    assert.equal(lengthInSeconds("12.06"), 726, "titik dipakai sebagian mesin sebagai pemisah menit");
+    assert.equal(lengthInSeconds(null), undefined);
+    assert.equal(lengthInSeconds(""), undefined);
+    assert.equal(lengthInSeconds("sebentar"), undefined);
+  });
+
   test("a length nobody reads becomes one they do", () => {
     assert.equal(readDuration("PT12M34S"), "12:34");
     assert.equal(readDuration("PT1H2M11S"), "1:02:11");
@@ -87,7 +97,44 @@ describe("finding a video", () => {
     assert.equal(readDuration("bukan durasi"), undefined);
   });
 
+  test("without a key the same question goes to the operator's own engine", async () => {
+    Object.assign(config, { SEARXNG_URL: "http://searxng.uji:8080" });
+    const asked: string[] = [];
+    useWebHttp((async (input: string | URL | Request) => {
+      asked.push(String(input));
+      return new Response(
+        JSON.stringify({
+          results: [
+            { title: "MUDAH BANGET! Cara Membuat Pembukuan UMKM - YouTube", url: "https://www.youtube.com/watch?v=zSTlKGoMbtE", length: 1319.0, content: "Bismillah, video ini memandu" },
+            { title: "Pembukuan sederhana", url: "https://www.youtube.com/watch?v=aaaaaaaaaaa", length: "12.06" },
+            { title: "Sebuah artikel, bukan video", url: "https://blog.example/laporan" },
+            { title: "Video di situs lain", url: "https://vimeo.com/12345" },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch);
+    try {
+      const videos = await searchVideos("pembukuan umkm");
+      assert.equal(videos.length, 2, "hanya tautan tonton YouTube yang dihitung video");
+      assert.equal(videos[1]!.length, "12:06", "durasi dari mesin lain tetap terbaca benar");
+      assert.deepEqual(videos[0], {
+        title: "MUDAH BANGET! Cara Membuat Pembukuan UMKM",
+        channel: "",
+        url: "https://www.youtube.com/watch?v=zSTlKGoMbtE",
+        published: "",
+        length: "21:59",
+      });
+      assert.match(asked[0]!, /categories=videos/, "kategori video, bukan pencarian web biasa");
+      assert.doesNotMatch(videos[0]!.title, /YouTube$/, "ekor judul dari mesin pencari dibuang");
+    } finally {
+      Object.assign(config, { SEARXNG_URL: "" });
+      useWebHttp(undefined);
+    }
+  });
+
   test("results carry what makes a list worth reading, and a spent quota says so plainly", async () => {
+    Object.assign(config, { YOUTUBE_API_KEY: "kunci-uji" });
     const asked: string[] = [];
     useYoutubeHttp((async (input: string | URL | Request) => {
       const url = new URL(String(input));
@@ -124,6 +171,7 @@ describe("finding a video", () => {
     useYoutubeHttp((async () =>
       new Response(JSON.stringify({ error: { errors: [{ reason: "quotaExceeded" }], message: "quota" } }), { status: 403 })) as typeof fetch);
     await assert.rejects(searchVideos("apa saja"), /Kuota pencarian YouTube hari ini sudah habis/);
+    Object.assign(config, { YOUTUBE_API_KEY: "" });
     useYoutubeHttp(undefined);
   });
 });
@@ -179,8 +227,14 @@ describe("the price tool and the reader that falls back", { skip: !dbEnabled && 
   });
 
   test("the video tool appears only with a key, and is capped per user", async () => {
-    assert.ok(!toolsFor(user).some((t) => t.name === "youtube_search"), "without a key it does not clutter the prompt");
+    assert.equal(youtubeAvailable(), false, "no key and no engine of its own");
+    assert.ok(!toolsFor(user).some((t) => t.name === "youtube_search"), "so it does not clutter the prompt");
     assert.match(String((await runTool({ user }, "youtube_search", { query: "apa saja" })).content), /belum diaktifkan/);
+
+    Object.assign(config, { SEARXNG_URL: "http://searxng.uji:8080" });
+    assert.equal(youtubeAvailable(), true, "an engine of its own is enough");
+    assert.ok(toolsFor(user).some((t) => t.name === "youtube_search"));
+    Object.assign(config, { SEARXNG_URL: "" });
 
     Object.assign(config, { YOUTUBE_API_KEY: "kunci-uji", YOUTUBE_SEARCHES_PER_DAY: 2 });
     useYoutubeHttp((async (input: string | URL | Request) =>

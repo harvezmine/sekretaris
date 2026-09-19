@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { searchVideoHits, webSearchEnabled } from "../web/search.js";
 
 /**
  * Finding a video on YouTube, through the official Data API.
@@ -20,6 +21,20 @@ export function useYoutubeHttp(fn: Fetch | undefined): void {
 
 export function youtubeEnabled(): boolean {
   return Boolean(config.YOUTUBE_API_KEY);
+}
+
+/** Either road will do: the official API when a key exists, the operator's own SearXNG when it does not. */
+export function youtubeAvailable(): boolean {
+  return youtubeEnabled() || webSearchEnabled();
+}
+
+/** Seconds are what SearXNG reports; "21:59" is what a person reads. */
+function fromSeconds(total: number): string {
+  const whole = Math.round(total);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  return h ? `${h}:${pad(m)}:${pad(whole % 60)}` : `${m}:${pad(whole % 60)}`;
 }
 
 export class YoutubeError extends Error {
@@ -75,6 +90,7 @@ async function call<T>(path: string, params: Record<string, string>): Promise<T>
 /** Newest first is rarely what someone wants; relevance is, so that is what is asked for. */
 export async function searchVideos(query: string, max = 5): Promise<Video[]> {
   if (!query.trim()) throw new YoutubeError("Sebutkan yang ingin dicari di YouTube.");
+  if (!youtubeEnabled()) return searchThroughSearx(query, max);
   const found = await call<SearchResponse>("search", {
     part: "snippet",
     type: "video",
@@ -107,4 +123,22 @@ export async function searchVideos(query: string, max = 5): Promise<Video[]> {
       ...(Number.isFinite(views) && views > 0 ? { views } : {}),
     };
   });
+}
+
+/**
+ * Without a key, the same question goes to the operator's own search engine. What comes back is thinner: a title,
+ * a link and usually a length, but no channel and no view count, because the engines behind it do not report them.
+ */
+async function searchThroughSearx(query: string, max: number): Promise<Video[]> {
+  if (!webSearchEnabled()) {
+    throw new YoutubeError("Pencarian video belum tersedia: belum ada kunci YouTube maupun mesin pencari sendiri.");
+  }
+  const hits = await searchVideoHits(query, max);
+  return hits.map((hit) => ({
+    title: hit.title || "(tanpa judul)",
+    channel: "",
+    url: hit.url,
+    published: "",
+    ...(hit.seconds ? { length: fromSeconds(hit.seconds) } : {}),
+  }));
 }
