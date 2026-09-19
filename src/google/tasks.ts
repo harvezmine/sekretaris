@@ -30,6 +30,8 @@ export interface Task {
   status: "needsAction" | "completed";
   listTitle: string;
   link?: string;
+  /** Which connected Google account this came from, filled in only when the user has more than one. */
+  account?: string;
 }
 
 interface RawTask {

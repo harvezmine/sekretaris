@@ -1,7 +1,7 @@
 import { sql, type UserRow } from "../db/index.js";
 import { DEFAULT_ASSISTANT_NAME } from "../persona/catalog.js";
 import { eventLine, listEvents, type CalendarEvent } from "../google/calendar.js";
-import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
+import { accountName, googleEnabled, GoogleAuthError, listAccounts, SCOPE, withAccount, type GoogleAccount } from "../google/client.js";
 import { searchMail, senderName } from "../google/gmail.js";
 import { tasksDueToday, type Task } from "../google/tasks.js";
 import { formatClock, formatDay, isoInZone } from "../util.js";
@@ -57,11 +57,14 @@ function reminderEntries(items: AgendaItem[], timeZone: string, now: Date, icons
 }
 
 function eventEntries(events: CalendarEvent[], timeZone: string, now: Date): Entry[] {
-  return events.map((e) => ({
-    at: e.start,
-    sort: e.allDay ? e.start.getTime() - 1 : e.start.getTime(),
-    line: `• 📅 ${eventLine(e, timeZone)}${!e.allDay && e.end.getTime() <= now.getTime() ? " _(sudah lewat)_" : ""}`,
-  }));
+  return events.map((e) => {
+    const notes = [e.account ?? "", !e.allDay && e.end.getTime() <= now.getTime() ? "sudah lewat" : ""].filter(Boolean);
+    return {
+      at: e.start,
+      sort: e.allDay ? e.start.getTime() - 1 : e.start.getTime(),
+      line: `• 📅 ${eventLine(e, timeZone)}${notes.length ? ` _(${notes.join(", ")})_` : ""}`,
+    };
+  });
 }
 
 export interface CalendarRead {
@@ -70,41 +73,84 @@ export interface CalendarRead {
   note?: string;
 }
 
-/** Undefined when the user has no calendar connected; a note when it is connected but unreadable. */
+/**
+ * A user may keep both a personal and a work Google account. Reading is the forgiving half of that: a day is only
+ * whole when every calendar is in it, so each read below asks every connected account and says which one an item
+ * came from. Writing is the careful half and lives in runTool, which never picks an account on the user's behalf.
+ */
+async function readableAccounts(userId: string, scope: string): Promise<GoogleAccount[]> {
+  if (!googleEnabled()) return [];
+  return (await listAccounts(userId)).filter((a) => a.scopes.includes(scope));
+}
+
+const byStart = (a: CalendarEvent, b: CalendarEvent) => a.start.getTime() - b.start.getTime();
+
+/** One account failing should not read as the whole calendar being gone, so the warning names it when there are several. */
+function calendarNote(expired: string[], broken: string[]): string | undefined {
+  const which = (names: string[]) => (names.some(Boolean) ? ` akun ${names.join(" dan ")}` : "");
+  if (expired.length) return `⚠️ Google Kalender${which(expired)} tidak bisa dibaca karena login kedaluwarsa. Ketik *KONEKSI* untuk login ulang.`;
+  if (broken.length) return `⚠️ Google Kalender${which(broken)} sedang tidak bisa dibaca.`;
+  return undefined;
+}
+
+/** Undefined when the user has no calendar connected; a note when one is connected but unreadable. */
 export async function calendarDays(user: UserRow, now: Date): Promise<CalendarRead | undefined> {
-  if (!googleEnabled()) return undefined;
-  const account = await getAccount(user.id);
-  if (!account?.scopes.includes(SCOPE.calendar)) return undefined;
-  const expired = { today: [], tomorrow: [], note: "⚠️ Google Kalender tidak bisa dibaca karena login kedaluwarsa. Ketik *KONEKSI* untuk login ulang." };
-  if (account.status !== "active") return expired;
+  const accounts = await readableAccounts(user.id, SCOPE.calendar);
+  if (!accounts.length) return undefined;
   const today = dayBounds(user.timezone, now, 0);
   const tomorrow = dayBounds(user.timezone, now, 1);
-  try {
-    const events = await listEvents(user.id, user.timezone, { from: today.start, to: tomorrow.end });
-    return {
-      today: events.filter((e) => e.start < today.end && e.end > today.start),
-      tomorrow: events.filter((e) => e.start >= tomorrow.start),
-    };
-  } catch (err) {
-    if (err instanceof GoogleAuthError) return expired;
-    return { today: [], tomorrow: [], note: "⚠️ Google Kalender sedang tidak bisa dibaca." };
-  }
+  const many = accounts.length > 1;
+  const events: CalendarEvent[] = [];
+  const expired: string[] = [];
+  const broken: string[] = [];
+
+  await Promise.all(
+    accounts.map(async (account) => {
+      // With one account the name is noise; with two it is the whole point of the line.
+      const tag = many ? accountName(account) : "";
+      if (account.status !== "active") {
+        expired.push(tag);
+        return;
+      }
+      try {
+        const found = await withAccount(account.email, () => listEvents(user.id, user.timezone, { from: today.start, to: tomorrow.end }));
+        events.push(...(tag ? found.map((e) => ({ ...e, account: tag })) : found));
+      } catch (err) {
+        (err instanceof GoogleAuthError ? expired : broken).push(tag);
+      }
+    }),
+  );
+
+  const note = calendarNote(expired, broken);
+  return {
+    today: events.filter((e) => e.start < today.end && e.end > today.start).sort(byStart),
+    tomorrow: events.filter((e) => e.start >= tomorrow.start).sort(byStart),
+    ...(note ? { note } : {}),
+  };
 }
 
 /** Tasks the user keeps in Google Tasks: no hour of their own, so they sit above the timed agenda. */
-export async function dueTasks(user: UserRow, now: Date): Promise<Task[]> {
-  if (!googleEnabled()) return [];
-  const account = await getAccount(user.id);
-  if (account?.status !== "active" || !account.scopes.includes(SCOPE.tasks)) return [];
-  try {
-    return await tasksDueToday(user.id, user.timezone, now);
-  } catch {
-    return [];
-  }
+export async function dueTasks(user: UserRow, now = new Date()): Promise<Task[]> {
+  const accounts = (await readableAccounts(user.id, SCOPE.tasks)).filter((a) => a.status === "active");
+  const many = accounts.length > 1;
+  const found = await Promise.all(
+    accounts.map(async (account) => {
+      try {
+        const tasks = await withAccount(account.email, () => tasksDueToday(user.id, user.timezone, now));
+        return many ? tasks.map((t) => ({ ...t, account: accountName(account) })) : tasks;
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return found.flat();
 }
 
 export function taskLines(tasks: Task[], today: string): string[] {
-  return tasks.map((t) => `• ✅ ${t.title}${t.due && t.due < today ? " _(lewat tenggat)_" : ""}`);
+  return tasks.map((t) => {
+    const notes = [t.account ?? "", t.due && t.due < today ? "lewat tenggat" : ""].filter(Boolean);
+    return `• ✅ ${t.title}${notes.length ? ` _(${notes.join(", ")})_` : ""}`;
+  });
 }
 
 export async function agendaText(user: UserRow, now = new Date()): Promise<string> {
@@ -139,16 +185,30 @@ export async function agendaText(user: UserRow, now = new Date()): Promise<strin
 }
 
 export async function importantMail(user: UserRow): Promise<string[]> {
-  if (!googleEnabled()) return [];
-  const account = await getAccount(user.id);
-  if (account?.status !== "active" || !account.scopes.includes(SCOPE.gmailRead)) return [];
-  try {
-    const mails = await searchMail(user.id, "is:unread is:important newer_than:1d", 3);
-    if (!mails.length) return [];
-    return ["", `📧 *Email penting belum dibaca* (${mails.length}):`, ...mails.map((m) => `• ${senderName(m.from)}: ${m.subject}`)];
-  } catch {
-    return [];
-  }
+  const accounts = (await readableAccounts(user.id, SCOPE.gmailRead)).filter((a) => a.status === "active");
+  if (!accounts.length) return [];
+  const many = accounts.length > 1;
+  const found = await Promise.all(
+    accounts.map(async (account) => {
+      try {
+        const mails = await withAccount(account.email, () => searchMail(user.id, "is:unread is:important newer_than:1d", 3));
+        return mails.map((mail) => ({ mail, tag: many ? accountName(account) : "" }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+  // Newest first, because two inboxes merged in connection order read as an arbitrary pile.
+  const mails = found
+    .flat()
+    .sort((a, b) => (b.mail.date?.getTime() ?? 0) - (a.mail.date?.getTime() ?? 0))
+    .slice(0, 4);
+  if (!mails.length) return [];
+  return [
+    "",
+    `📧 *Email penting belum dibaca* (${mails.length}):`,
+    ...mails.map(({ mail, tag }) => `• ${senderName(mail.from)}: ${mail.subject}${tag ? ` _(${tag})_` : ""}`),
+  ];
 }
 
 export async function briefingText(user: UserRow, now = new Date()): Promise<string> {

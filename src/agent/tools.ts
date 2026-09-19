@@ -31,8 +31,8 @@ import { CONFIRM_MINUTES, draftRelay, messageSendFor, RelayError } from "../rela
 import { uploadUrlFor } from "../uploads/links.js";
 import { normalizeCallName, normalizeWork, parseClock, updateProfile } from "../profile/profile.js";
 import type { RoutineKind } from "../routines/routines.js";
-import { getAccount, googleEnabled, GoogleAuthError, SCOPE } from "../google/client.js";
-import { searchGoogleContacts } from "../google/contacts.js";
+import { googleEnabled, GoogleAuthError, listAccounts, resolveAccount, SCOPE, withAccount, type GoogleAccount } from "../google/client.js";
+import { searchGoogleContacts, type GoogleContact } from "../google/contacts.js";
 import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { notionHandlers, notionInputs, notionToolDefs } from "./notionTools.js";
 import { MARKET_TOOL_DEF, webHandlers, webInputs, webToolDefs, YOUTUBE_TOOL_DEF } from "./webTools.js";
@@ -519,11 +519,10 @@ async function saveContact(user: UserRow, c: ContactInput): Promise<string | und
   return row?.id;
 }
 
-/** Whether this user's Google contacts can be searched right now. */
-async function googleContactsReady(user: UserRow): Promise<boolean> {
-  if (!googleEnabled()) return false;
-  const account = await getAccount(user.id);
-  return account?.status === "active" && account.scopes.includes(SCOPE.contacts);
+/** Every account whose Google contacts can be searched right now: a colleague usually sits in the work address book. */
+async function contactAccounts(user: UserRow): Promise<GoogleAccount[]> {
+  if (!googleEnabled()) return [];
+  return (await listAccounts(user.id)).filter((a) => a.status === "active" && a.scopes.includes(SCOPE.contacts));
 }
 
 const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inputs)[K]>) => Promise<ToolOutcome> } = {
@@ -628,27 +627,37 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
     if (rows.length) return ok(rows.map((r) => ({ id: Number(r.id), name: r.name, alias: r.alias, phone: r.phone, email: r.email })));
 
     // Nobody is saved here yet: the user's Google contacts are the address book they already keep.
-    if (await googleContactsReady(user)) {
-      try {
-        const found = await searchGoogleContacts(user.id, query);
-        if (found.length) {
-          const saved = await Promise.all(
-            found.map(async (c) => ({
-              id: Number(await saveContact(user, { name: c.name, phone: c.phone, alias: null, email: c.email })),
-              name: c.name,
-              phone: c.phone,
-              email: c.email,
-              organization: c.organization,
-            })),
-          );
-          return ok({ from: "Google Kontak", saved_to_user_contacts: true, contacts: saved });
+    const accounts = await contactAccounts(user);
+    if (accounts.length) {
+      const found: GoogleContact[] = [];
+      const seen = new Set<string>();
+      let stale = false;
+      for (const account of accounts) {
+        try {
+          for (const contact of await withAccount(account.email, () => searchGoogleContacts(user.id, query))) {
+            const key = contact.phone ?? contact.email ?? contact.name;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            found.push(contact);
+          }
+        } catch (err) {
+          if (!(err instanceof GoogleAuthError)) throw err;
+          stale = true;
         }
-      } catch (err) {
-        if (err instanceof GoogleAuthError) {
-          return ok(`Tidak ada kontak tersimpan yang cocok dengan "${query}", dan Google Kontak tidak terbaca karena login kedaluwarsa.`);
-        }
-        throw err;
       }
+      if (found.length) {
+        const saved = await Promise.all(
+          found.map(async (c) => ({
+            id: Number(await saveContact(user, { name: c.name, phone: c.phone, alias: null, email: c.email })),
+            name: c.name,
+            phone: c.phone,
+            email: c.email,
+            organization: c.organization,
+          })),
+        );
+        return ok({ from: "Google Kontak", saved_to_user_contacts: true, contacts: saved });
+      }
+      if (stale) return ok(`Tidak ada kontak tersimpan yang cocok dengan "${query}", dan Google Kontak tidak terbaca karena login kedaluwarsa.`);
     }
     return ok(`Tidak ada kontak yang cocok dengan "${query}".`);
   },
@@ -964,6 +973,19 @@ export async function runTool(ctx: ToolContext, name: string, rawInput: unknown)
   }
   try {
     const handler = handlers[key] as (c: ToolContext, i: unknown) => Promise<ToolOutcome>;
+    // "di email kerja saya" names an account; resolved once here so no handler has to think about it.
+    const named = (parsed.data as { account?: unknown }).account;
+    if (typeof named === "string" && named.trim()) {
+      const { account, accounts } = await resolveAccount(ctx.user.id, named);
+      if (!account) {
+        return fail(
+          accounts.length
+            ? `Tidak ada akun Google yang cocok dengan "${named}". Yang terhubung: ${accounts.map((a) => `${a.label ?? "akun"} (${a.email})`).join(", ")}.`
+            : "Belum ada akun Google yang terhubung.",
+        );
+      }
+      return await withAccount(account.email, () => handler(ctx, parsed.data));
+    }
     return await handler(ctx, parsed.data);
   } catch (err) {
     return fail(`Gagal menjalankan ${name}: ${err instanceof Error ? err.message : String(err)}`);

@@ -56,10 +56,12 @@ import {
   type ServerRunPayload,
 } from "./servers/actions.js";
 import {
+  accountName,
   disconnect as disconnectGoogle,
   enabledServices,
   getAccount,
   googleEnabled,
+  listAccounts,
   SERVICE_LABEL,
   servicesGranted,
   type AuthResult,
@@ -864,22 +866,35 @@ export class Pipeline {
     const lines = ["🔗 *Koneksi akun*"];
     const rows = [];
     if (googleEnabled()) {
-      const account = await getAccount(user.id);
-      const granted = account ? servicesGranted(account.scopes) : [];
-      if (!account) {
-        lines.push("Google: belum terhubung.");
-      } else if (account.status !== "active") {
-        lines.push(`Google: ⚠️ ${account.email ?? "akun"}, login kedaluwarsa.`);
-        rows.push({ id: "conn:google:relogin", title: "🔄 Login ulang Google", description: "Sambungkan lagi akun yang sama" });
-      } else {
-        lines.push(`Google: ✅ ${account.email ?? "terhubung"}, untuk ${granted.map((s) => SERVICE_LABEL[s]).join(", ") || "belum ada layanan"}.`);
+      const accounts = await listAccounts(user.id);
+      // Services the user already has somewhere: what is offered is what none of their accounts can do yet.
+      const granted = [...new Set(accounts.flatMap((a) => servicesGranted(a.scopes)))];
+      const many = accounts.length > 1;
+      if (!accounts.length) lines.push("Google: belum terhubung.");
+      for (const a of accounts) {
+        const who = `${a.email}${many ? ` (${accountName(a)}${a.isPrimary ? ", utama" : ""})` : ""}`;
+        if (a.status !== "active") {
+          lines.push(`Google: ⚠️ ${who}, login kedaluwarsa.`);
+          rows.push({ id: `conn:google:relogin:${a.email}`, title: "🔄 Login ulang Google", description: `Sambungkan lagi ${a.email}` });
+        } else {
+          lines.push(`Google: ✅ ${who}, untuk ${servicesGranted(a.scopes).map((s) => SERVICE_LABEL[s]).join(", ") || "belum ada layanan"}.`);
+        }
       }
       const missing = enabledServices().filter((s) => !granted.includes(s));
-      if (!account && missing.length > 1) {
+      if (!accounts.length && missing.length > 1) {
         rows.push({ id: "conn:google:all", title: "🔗 Semua akun Google", description: "Kalender, Gmail, dan Drive sekaligus" });
       }
       rows.push(...missing.map((s) => CONNECT_ROWS[s]));
-      if (account) rows.push({ id: "conn:google:disconnect", title: "❌ Putuskan Google", description: "Cabut akses Milo ke akun Google Anda" });
+      if (accounts.length) {
+        rows.push({ id: "conn:google:add", title: "➕ Tambah akun Google", description: "Login dengan alamat lain, yang lama tetap ada" });
+        rows.push(
+          ...accounts.map((a) => ({
+            id: `conn:google:disconnect:${a.email}`,
+            title: many ? `❌ Putuskan ${accountName(a)}` : "❌ Putuskan Google",
+            description: many ? `Cabut akses Milo ke ${a.email}` : "Cabut akses Milo ke akun Google Anda",
+          })),
+        );
+      }
     }
     if (notionEnabled()) {
       const notion = await getNotionAccount(user.id);
@@ -909,7 +924,7 @@ export class Pipeline {
   private async handleConnectButton(user: UserRow, action: string): Promise<void> {
     if (!hasAccess(user)) return this.showMenu(user);
     if (action === "server") return this.connectChoice(user, "server");
-    const [kind, value] = action.split(":");
+    const [kind, value, ...rest] = action.split(":");
     if (kind === "notion") {
       if (value === "disconnect") {
         const removed = await disconnectNotion(user.id);
@@ -920,15 +935,17 @@ export class Pipeline {
     }
     if (kind !== "google" || !value) return this.showQuickMenu(user);
     if (value === "disconnect") {
-      const removed = await disconnectGoogle(user.id);
+      const removed = await disconnectGoogle(user.id, rest.join(":") || undefined);
       await closeSessions(user.id);
-      return this.replyStatic(user, "[Menu: putuskan Google]", removed ? copy.CONNECT_TEXT.disconnected : copy.CONNECT_TEXT.notConnected);
+      const what = removed.length ? copy.googleDisconnected(removed.map((a) => a.email)) : copy.CONNECT_TEXT.notConnected;
+      return this.replyStatic(user, "[Menu: putuskan Google]", what);
     }
     if (value === "relogin") {
-      const account = await getAccount(user.id);
+      const account = await getAccount(user.id, rest.join(":") || undefined);
       const granted = account ? servicesGranted(account.scopes) : [];
       return this.sendConnectLink(user, granted.length ? granted : enabledServices());
     }
+    if (value === "add") return this.connectChoice(user, "google");
     if (value === "all") return this.connectChoice(user, "google");
     if ((enabledServices() as string[]).includes(value)) return this.connectChoice(user, value as GoogleService);
     return this.showQuickMenu(user);
@@ -985,6 +1002,7 @@ export class Pipeline {
         result.granted.map((s) => SERVICE_LABEL[s]),
         missing.map((s) => SERVICE_LABEL[s]),
         examples,
+        { added: result.added, accounts: result.accounts, primary: result.primary },
       ),
       { raw: true },
     );

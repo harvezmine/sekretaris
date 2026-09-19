@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { sql } from "../db/index.js";
@@ -50,6 +51,20 @@ export const SERVICE_LABEL: Record<GoogleService, string> = {
 
 type Fetch = typeof fetch;
 let http: Fetch = (input, init) => fetch(input, init);
+
+/**
+ * The account a single tool call is working with. Request-scoped rather than passed down, because otherwise every
+ * function between the tool and the HTTP call would carry an address it does not care about.
+ */
+const accountScope = new AsyncLocalStorage<string>();
+
+export function withAccount<T>(email: string | undefined, run: () => Promise<T>): Promise<T> {
+  return email ? accountScope.run(email, run) : run();
+}
+
+export function currentAccountEmail(): string | undefined {
+  return accountScope.getStore();
+}
 
 /** Tests swap in a fake Google. */
 export function useGoogleHttp(fn: Fetch | undefined): void {
@@ -129,7 +144,7 @@ export class OAuthStateError extends Error {
 
 export interface GoogleAccount {
   userId: string;
-  email: string | null;
+  email: string;
   scopes: string[];
   refreshTokenEnc: string | null;
   accessTokenEnc: string | null;
@@ -138,11 +153,75 @@ export interface GoogleAccount {
   lastError: string | null;
   expiredNotifiedAt: Date | null;
   connectedAt: Date;
+  /** What the user calls it: "kantor", "pribadi". Guessed from the address until they rename it. */
+  label: string | null;
+  isPrimary: boolean;
 }
 
-export async function getAccount(userId: string): Promise<GoogleAccount | undefined> {
-  const [row] = await sql<GoogleAccount[]>`select * from google_accounts where user_id = ${userId}`;
-  return row;
+/**
+ * A user may connect several Google accounts, typically a personal one and a work one. Everything defaults to the
+ * primary; a caller that knows which account it wants passes the address, and a turn can set one for its duration
+ * with withAccount, so the twenty-odd places that call Google do not each have to carry it.
+ */
+export async function listAccounts(userId: string): Promise<GoogleAccount[]> {
+  return sql<GoogleAccount[]>`select * from google_accounts where user_id = ${userId} order by is_primary desc, connected_at`;
+}
+
+export async function getAccount(userId: string, email?: string): Promise<GoogleAccount | undefined> {
+  const wanted = email ?? currentAccountEmail();
+  if (wanted) {
+    const [row] = await sql<GoogleAccount[]>`select * from google_accounts where user_id = ${userId} and lower(email) = lower(${wanted})`;
+    return row;
+  }
+  const accounts = await listAccounts(userId);
+  return accounts.find((a) => a.isPrimary) ?? accounts[0];
+}
+
+/** Consumer mail is personal, a company domain is work; the user renames it whenever the guess is wrong. */
+export function guessLabel(email: string): string {
+  const domain = email.split("@")[1]?.toLowerCase() ?? "";
+  if (/^(gmail|googlemail|yahoo|outlook|hotmail|icloud|proton|protonmail)\./.test(`${domain}.`)) return "pribadi";
+  const name = domain.split(".")[0];
+  return name ? name.slice(0, 30) : "kerja";
+}
+
+/** What to call an account in a sentence: the user's own name for it, or the guess until they give it one. */
+export function accountName(account: Pick<GoogleAccount, "email" | "label">): string {
+  return account.label?.trim() || guessLabel(account.email);
+}
+
+/**
+ * What the user meant by "email kerja saya" or "yang @ptkarya.co.id": their label or their address, matched
+ * loosely. Nothing matching means nothing is guessed; the caller says which accounts exist instead.
+ */
+export async function resolveAccount(userId: string, hint?: string): Promise<{ account?: GoogleAccount; accounts: GoogleAccount[] }> {
+  const accounts = await listAccounts(userId);
+  if (!hint?.trim()) return { account: accounts.find((a) => a.isPrimary) ?? accounts[0], accounts };
+  const wanted = hint.trim().toLowerCase();
+  // Matched against the name the user sees, which for an account connected before naming existed is the guess.
+  const named = (a: GoogleAccount) => accountName(a).toLowerCase();
+  const account =
+    accounts.find((a) => a.email.toLowerCase() === wanted) ??
+    accounts.find((a) => named(a) === wanted) ??
+    accounts.find((a) => a.email.toLowerCase().includes(wanted) || wanted.includes(a.email.toLowerCase())) ??
+    accounts.find((a) => wanted.includes(named(a)) || named(a).includes(wanted));
+  return { ...(account ? { account } : {}), accounts };
+}
+
+export async function renameAccount(userId: string, email: string, label: string): Promise<boolean> {
+  const rows = await sql`
+    update google_accounts set label = ${label.trim().slice(0, 30)}, updated_at = now()
+    where user_id = ${userId} and lower(email) = lower(${email}) returning email
+  `;
+  return rows.length > 0;
+}
+
+export async function setPrimaryAccount(userId: string, email: string): Promise<boolean> {
+  const [exists] = await sql`select 1 from google_accounts where user_id = ${userId} and lower(email) = lower(${email})`;
+  if (!exists) return false;
+  await sql`update google_accounts set is_primary = false where user_id = ${userId} and is_primary`;
+  await sql`update google_accounts set is_primary = true, updated_at = now() where user_id = ${userId} and lower(email) = lower(${email})`;
+  return true;
 }
 
 async function errorText(res: Response): Promise<string> {
@@ -186,7 +265,8 @@ export async function beginAuth(userId: string, services: readonly GoogleService
     response_type: "code",
     scope: scopes.join(" "),
     access_type: "offline",
-    prompt: "consent",
+    // The chooser matters once a second account is possible: without it Google silently takes whoever is signed in.
+    prompt: "consent select_account",
     include_granted_scopes: "true",
     state,
     code_challenge: challenge,
@@ -208,9 +288,15 @@ function emailFromIdToken(idToken: string | undefined): string | null {
 
 export interface AuthResult {
   userId: string;
-  email: string | null;
+  email: string;
   requested: GoogleService[];
   granted: GoogleService[];
+  /** False when this address was already connected and has just been signed in again. */
+  added: boolean;
+  /** How many accounts the user has now, so the reply can mention the others. */
+  accounts: number;
+  /** The name of the account that stays the default, which is not always the one just connected. */
+  primary: string;
 }
 
 /**
@@ -238,43 +324,68 @@ export async function completeAuth(stateId: string, code: string): Promise<AuthR
     scope?: string;
     id_token?: string;
   };
-  const existing = await getAccount(state.userId);
+  // Which account this is has to be known before anything is kept, or a missing refresh token would be filled in
+  // from whichever account happened to be the primary.
+  const email = emailFromIdToken(json.id_token);
+  if (!email) throw new GoogleApiError("Google tidak memberitahukan alamat email akun ini.", 400);
+  const before = await listAccounts(state.userId);
+  const existing = before.find((a) => a.email.toLowerCase() === email.toLowerCase());
   const refreshEnc = json.refresh_token ? sealSecret(json.refresh_token) : existing?.refreshTokenEnc;
   if (!refreshEnc) throw new GoogleApiError("Google tidak memberikan akses jangka panjang. Coba hubungkan ulang.", 400);
   const scopes = (json.scope ?? "").split(" ").filter(Boolean);
-  const email = emailFromIdToken(json.id_token) ?? existing?.email ?? null;
   const expiresAt = new Date(Date.now() + (json.expires_in ?? 3600) * 1000);
+  // The first account signed in is the primary; a second one joins it rather than pushing it out.
+  const firstOne = before.length === 0;
   await sql`
-    insert into google_accounts (user_id, email, scopes, refresh_token_enc, access_token_enc, access_expires_at, status)
-    values (${state.userId}, ${email}, ${scopes}, ${refreshEnc}, ${sealSecret(json.access_token)}, ${expiresAt}, 'active')
-    on conflict (user_id) do update set
-      email = excluded.email, scopes = excluded.scopes, refresh_token_enc = excluded.refresh_token_enc,
+    insert into google_accounts (user_id, email, scopes, refresh_token_enc, access_token_enc, access_expires_at, status, label, is_primary)
+    values (${state.userId}, ${email}, ${scopes}, ${refreshEnc}, ${sealSecret(json.access_token)}, ${expiresAt}, 'active', ${guessLabel(email)}, ${firstOne})
+    on conflict (user_id, email) do update set
+      scopes = excluded.scopes, refresh_token_enc = coalesce(excluded.refresh_token_enc, google_accounts.refresh_token_enc),
       access_token_enc = excluded.access_token_enc, access_expires_at = excluded.access_expires_at,
       status = 'active', last_error = null, expired_notified_at = null, updated_at = now()
   `;
-  return { userId: state.userId, email, requested: state.services, granted: servicesGranted(scopes) };
+  const after = await listAccounts(state.userId);
+  return {
+    userId: state.userId,
+    email,
+    requested: state.services,
+    granted: servicesGranted(scopes),
+    added: !existing,
+    accounts: after.length,
+    primary: after.find((a) => a.isPrimary)?.email ?? email,
+  };
 }
 
 /** Revokes at Google (best effort) and forgets the tokens. */
-export async function disconnect(userId: string): Promise<boolean> {
-  const account = await getAccount(userId);
-  if (!account) return false;
+async function revokeAt(account: GoogleAccount): Promise<void> {
   const token = account.refreshTokenEnc ? openSecret(account.refreshTokenEnc) : undefined;
-  if (token) {
-    await http(`${ENDPOINTS.revoke}?token=${encodeURIComponent(token)}`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => undefined);
-  }
-  await sql`delete from google_accounts where user_id = ${userId}`;
-  return true;
+  if (!token) return;
+  await http(`${ENDPOINTS.revoke}?token=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => undefined);
 }
 
-async function markExpired(userId: string, reason: string): Promise<void> {
+/** One account when an address is given, otherwise every account the user connected. */
+export async function disconnect(userId: string, email?: string): Promise<GoogleAccount[]> {
+  const accounts = await listAccounts(userId);
+  const going = email ? accounts.filter((a) => a.email.toLowerCase() === email.toLowerCase()) : accounts;
+  if (!going.length) return [];
+  for (const account of going) await revokeAt(account);
+  await sql`delete from google_accounts where user_id = ${userId} and email in ${sql(going.map((a) => a.email))}`;
+  // Removing the primary leaves the rest headless, so the oldest of them takes over.
+  const left = accounts.filter((a) => !going.some((g) => g.email === a.email));
+  if (left.length && !left.some((a) => a.isPrimary)) {
+    await setPrimaryAccount(userId, left[0]!.email);
+  }
+  return going;
+}
+
+async function markExpired(userId: string, email: string, reason: string): Promise<void> {
   await sql`
     update google_accounts set status = 'expired', last_error = ${reason.slice(0, 300)}, access_token_enc = null, updated_at = now()
-    where user_id = ${userId}
+    where user_id = ${userId} and email = ${email}
   `;
 }
 
@@ -289,7 +400,7 @@ async function accessToken(account: GoogleAccount, force = false): Promise<strin
   if (!res.ok) {
     const reason = await errorText(res);
     if (res.status === 400 || res.status === 401) {
-      await markExpired(account.userId, reason);
+      await markExpired(account.userId, account.email, reason);
       throw new GoogleAuthError();
     }
     throw new GoogleApiError(`Google tidak bisa dihubungi: ${reason}`, res.status);
@@ -300,15 +411,15 @@ async function accessToken(account: GoogleAccount, force = false): Promise<strin
   await sql`
     update google_accounts set access_token_enc = ${sealSecret(json.access_token)}, access_expires_at = ${expiresAt},
       scopes = ${scopes}, updated_at = now()
-    where user_id = ${account.userId}
+    where user_id = ${account.userId} and email = ${account.email}
   `;
   account.scopes = scopes;
   return json.access_token;
 }
 
 /** The account, if it is active and has at least one of `anyOf`. */
-export async function requireScope(userId: string, anyOf: readonly string[]): Promise<GoogleAccount> {
-  const account = await getAccount(userId);
+export async function requireScope(userId: string, anyOf: readonly string[], email?: string): Promise<GoogleAccount> {
+  const account = await getAccount(userId, email);
   if (!account || !anyOf.some((s) => account.scopes.includes(s))) throw new GoogleNotConnectedError(anyOf);
   if (account.status !== "active") throw new GoogleAuthError();
   return account;
@@ -341,7 +452,7 @@ async function send(userId: string, anyOf: readonly string[], req: GoogleRequest
   let res = await attempt(false);
   if (res.status === 401) res = await attempt(true);
   if (res.status === 401) {
-    await markExpired(userId, await errorText(res));
+    await markExpired(userId, account.email, await errorText(res));
     throw new GoogleAuthError();
   }
   if (!res.ok) {

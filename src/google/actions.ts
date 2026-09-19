@@ -1,7 +1,7 @@
 import { ACTION_MINUTES, type PendingAction } from "../actions/pending.js";
 import type { UserRow } from "../db/index.js";
 import { createEvent, deleteEvent, eventLine, eventTime, type NewEvent } from "./calendar.js";
-import { getAccount, GoogleApiError, GoogleAuthError, GoogleNotConnectedError } from "./client.js";
+import { accountName, getAccount, GoogleApiError, GoogleAuthError, GoogleNotConnectedError, withAccount } from "./client.js";
 import { sendMail, type SendRequest } from "./gmail.js";
 
 export interface MailPayload extends SendRequest {
@@ -13,6 +13,12 @@ export type GoogleAction = PendingAction & { kind: "gmail_send" | "calendar_invi
 
 export function isGoogleAction(action: PendingAction): action is GoogleAction {
   return action.kind !== "server_run";
+}
+
+/** Which Google account this was prepared on, when the user has more than one. */
+function accountOf(action: GoogleAction): string | undefined {
+  const named = (action.payload as { account?: unknown }).account;
+  return typeof named === "string" && named ? named : undefined;
 }
 
 export interface DeletePayload {
@@ -63,14 +69,15 @@ export function actionPreview(action: GoogleAction, user: UserRow): string {
 }
 
 export async function actionQuestion(action: GoogleAction, user: UserRow): Promise<string> {
-  const account = await getAccount(user.id);
+  const account = await getAccount(user.id, accountOf(action));
   const from = account?.email ? ` dari ${account.email}` : "";
+  const on = account && !account.isPrimary ? ` di kalender ${accountName(account)}` : "";
   const ask =
     action.kind === "gmail_send"
       ? `Kirim email di atas${from}?`
       : action.kind === "calendar_invite"
-        ? "Buat acara ini dan kirim undangannya?"
-        : "Hapus acara ini?";
+        ? `Buat acara ini${on} dan kirim undangannya?`
+        : `Hapus acara ini${on}?`;
   return `${ask} Saya tunggu jawaban Anda ${ACTION_MINUTES} menit.`;
 }
 
@@ -83,6 +90,11 @@ export interface ActionOutcome {
 }
 
 export async function runAction(action: GoogleAction, user: UserRow): Promise<ActionOutcome> {
+  // Whatever the user's default is now, this runs on the account the message was written on.
+  return withAccount(accountOf(action), () => perform(action, user));
+}
+
+async function perform(action: GoogleAction, user: UserRow): Promise<ActionOutcome> {
   try {
     switch (action.kind) {
       case "gmail_send": {

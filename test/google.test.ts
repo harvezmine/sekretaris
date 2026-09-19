@@ -10,10 +10,17 @@ import { config } from "../src/config.ts";
 import { migrate, sql, type UserRow } from "../src/db/index.ts";
 import { freeSlots, type CalendarEvent } from "../src/google/calendar.ts";
 import {
+  accountName,
   beginAuth,
   completeAuth,
+  disconnect,
   enabledServices,
+  getAccount,
   googleEnabled,
+  guessLabel,
+  listAccounts,
+  renameAccount,
+  resolveAccount,
   SCOPE,
   scopesFor,
   servicesGranted,
@@ -21,6 +28,7 @@ import {
 } from "../src/google/client.ts";
 import { driveLiteral } from "../src/google/drive.ts";
 import { buildMime, encodeHeader, htmlToText, validAddress } from "../src/google/mime.ts";
+import { agendaText, calendarDays, importantMail } from "../src/profile/agenda.ts";
 import { quickRows } from "../src/onboarding/setup.ts";
 import { createCodes } from "../src/onboarding/codes.ts";
 import { createSignedToken, readSignedToken, readUploadToken } from "../src/uploads/links.ts";
@@ -59,7 +67,8 @@ class FakeGoogle {
   revoked: string[] = [];
   grant = { scopes: ALL_SCOPES, email: "josh@gmail.com", challenge: "" };
   refreshFails = false;
-  private issued = 0;
+  /** The last access token handed out, so a test can tell one account's calls from the other's. */
+  issued = 0;
   events: Record<string, unknown>[] = [];
   messages: Record<string, { meta: Record<string, unknown>; attachments: Record<string, Buffer> }> = {};
   sent: { raw: string; threadId?: string }[] = [];
@@ -330,28 +339,38 @@ describe("Google pieces that need no database", () => {
         "drive_read",
         "drive_save",
         "drive_search",
+        "google_accounts",
         "google_connect",
         "google_disconnect",
         "sheet_append",
         "sheet_read",
       ]);
       Object.assign(config, { GOOGLE_SERVICES: "forms" });
-      assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), ["form_create", "form_responses", "google_connect", "google_disconnect"]);
+      assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), ["form_create", "form_responses", "google_accounts", "google_connect", "google_disconnect"]);
       assert.deepEqual(scopesFor("forms"), [SCOPE.formsBody, SCOPE.formsResponses, SCOPE.driveFile]);
       Object.assign(config, { GOOGLE_SERVICES: "tasks" });
-      assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), ["google_connect", "google_disconnect", "task_add", "task_done", "task_list"]);
+      assert.deepEqual(googleToolDefs().map((t) => t.name).sort(), ["google_accounts", "google_connect", "google_disconnect", "task_add", "task_done", "task_list"]);
       assert.deepEqual(scopesFor("tasks"), [SCOPE.tasks]);
     } finally {
       Object.assign(config, { GOOGLE_GMAIL_READ: true, GOOGLE_DRIVE_FULL: true, GOOGLE_SERVICES: "calendar,gmail,drive,contacts,tasks,forms" });
     }
     assert.deepEqual(servicesGranted([SCOPE.calendar, SCOPE.gmailSend]), ["calendar"], "gmail needs both scopes while read is on");
-    assert.equal(googleToolDefs().length, 20);
+    assert.equal(googleToolDefs().length, 21);
     try {
       config.GOOGLE_CLIENT_ID = "";
       assert.equal(googleToolDefs().length, 0);
     } finally {
       config.GOOGLE_CLIENT_ID = "cid.apps.googleusercontent.com";
     }
+  });
+
+  test("an account is named after what it is, until the user says otherwise", () => {
+    assert.equal(guessLabel("josh@gmail.com"), "pribadi");
+    assert.equal(guessLabel("josh@yahoo.co.id"), "pribadi");
+    assert.equal(guessLabel("josh@ptkarya.co.id"), "ptkarya");
+    assert.equal(accountName({ email: "josh@ptkarya.co.id", label: null }), "ptkarya", "an account connected before naming existed still has a name");
+    assert.equal(accountName({ email: "josh@ptkarya.co.id", label: "kantor" }), "kantor");
+    assert.equal(accountName({ email: "josh@ptkarya.co.id", label: "  " }), "ptkarya");
   });
 
   test("signed links cannot be reused for another purpose", () => {
@@ -421,7 +440,9 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
   const fake = new FakeGoogle();
   let ctx: App;
   let wa: DryRunClient;
+  // A run of its own: the same wamid twice is a duplicate to Milo, and rows from an earlier run share this database.
   let seq = 0;
+  const run = Math.random().toString(36).slice(2, 8);
 
   const agent = {
     async modelFor() {
@@ -448,7 +469,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
               field: "messages",
               value: {
                 contacts: [{ wa_id: from, profile: { name: "Josh" } }],
-                messages: [{ id: `wamid.g${++seq}`, from, timestamp: String(Math.floor(Date.now() / 1000)), ...message }],
+                messages: [{ id: `wamid.g${run}-${++seq}`, from, timestamp: String(Math.floor(Date.now() / 1000)), ...message }],
               },
             },
           ],
@@ -541,7 +562,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     assert.equal(auth.searchParams.get("client_id"), "cid.apps.googleusercontent.com");
     assert.equal(auth.searchParams.get("redirect_uri"), "https://milo.example.com/google/callback");
     assert.equal(auth.searchParams.get("access_type"), "offline");
-    assert.equal(auth.searchParams.get("prompt"), "consent");
+    assert.equal(auth.searchParams.get("prompt"), "consent select_account", "the chooser lets a second account be added");
     assert.equal(auth.searchParams.get("code_challenge_method"), "S256");
     assert.deepEqual(auth.searchParams.get("scope")!.split(" ").sort(), [...ALL_SCOPES].sort());
 
@@ -564,12 +585,12 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
 
     const user = await byWa(u);
     assert.ok(toolsFor(user).some((t) => t.name === "gmail_send"));
-    assert.match(await buildSnapshot(user), /Google: josh@gmail\.com; access: calendar \(read and edit events\); gmail \(search and read, send after confirmation\); drive \(search and read all files, save files\); contacts \(look up the user's own Google contacts\)/);
+    assert.match(await buildSnapshot(user), /Google \(pribadi, primary\): josh@gmail\.com; access: calendar \(read and edit events\); gmail \(search and read, send after confirmation\); drive \(search and read all files, save files\); contacts \(look up the user's own Google contacts\)/);
 
     await say(u, "koneksi");
     const connections = last(u);
     assert.match(connections.text!, /Google: ✅ josh@gmail\.com, untuk Google Kalender, Gmail, Google Drive, Google Kontak, Google Tasks, Google Formulir\./);
-    assert.deepEqual(connections.buttons!.map((b) => b.id), ["conn:google:disconnect"]);
+    assert.deepEqual(connections.buttons!.map((b) => b.id), ["conn:google:add", "conn:google:disconnect:josh@gmail.com"]);
   });
 
   test("a partial grant says what is still missing", async () => {
@@ -587,7 +608,8 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
       "conn:google:contacts",
       "conn:google:tasks",
       "conn:google:forms",
-      "conn:google:disconnect",
+      "conn:google:add",
+      "conn:google:disconnect:rina@gmail.com",
     ]);
   });
 
@@ -1052,7 +1074,7 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     await say(u.waId, "agenda");
     assert.match(last(u.waId).text!, /tidak bisa dibaca karena login kedaluwarsa/);
     await say(u.waId, "koneksi");
-    assert.deepEqual(last(u.waId).buttons!.map((b) => b.id), ["conn:google:relogin", "conn:google:disconnect"]);
+    assert.deepEqual(last(u.waId).buttons!.map((b) => b.id), ["conn:google:relogin:josh@gmail.com", "conn:google:add", "conn:google:disconnect:josh@gmail.com"]);
     await tap(u.waId, "conn:google:relogin");
     assert.match(last(u.waId).text!, /Hubungkan Google Kalender, Gmail, Google Drive/);
 
@@ -1077,5 +1099,111 @@ describe("Google end to end", { skip: !dbEnabled && "set TEST_DATABASE_URL to ru
     await tap(h.waId, "delete_yes");
     assert.equal(fake.revoked.length, revokedBefore + 1, "deleting the account revokes Google access");
     assert.equal((await sql`select 1 from users where wa_id = ${h.waId}`).length, 0);
+  });
+
+  test("two Google accounts: the primary answers by default, reads cover both, and a send stays on the account it was written on", async () => {
+    const u = await readyUser("6284400000008");
+    await connect(u.id, ALL_SCOPES, "josh@gmail.com");
+    const home = `Bearer at-${fake.issued}`;
+    await connect(u.id, ALL_SCOPES, "josh@ptkarya.co.id");
+    const work = `Bearer at-${fake.issued}`;
+    assert.notEqual(home, work);
+
+    assert.deepEqual(
+      (await listAccounts(u.id)).map((a) => [a.email, a.label, a.isPrimary]),
+      [
+        ["josh@gmail.com", "pribadi", true],
+        ["josh@ptkarya.co.id", "ptkarya", false],
+      ],
+      "the second account joins the first instead of replacing it, and the first stays the default",
+    );
+
+    assert.equal((await resolveAccount(u.id)).account?.email, "josh@gmail.com", "no hint means the primary");
+    assert.equal((await resolveAccount(u.id, "josh@ptkarya.co.id")).account?.email, "josh@ptkarya.co.id");
+    assert.equal((await resolveAccount(u.id, "ptkarya")).account?.email, "josh@ptkarya.co.id");
+    assert.equal((await resolveAccount(u.id, "akun bank")).account, undefined, "nothing matching is never guessed");
+    await sql`update google_accounts set label = null where user_id = ${u.id} and email = 'josh@gmail.com'`;
+    assert.equal((await resolveAccount(u.id, "pribadi")).account?.email, "josh@gmail.com", "a row from before naming existed answers to its guessed name");
+    await sql`update google_accounts set label = 'pribadi' where user_id = ${u.id} and email = 'josh@gmail.com'`;
+    await renameAccount(u.id, "josh@ptkarya.co.id", "kantor");
+    assert.equal((await resolveAccount(u.id, "email kantor saya")).account?.email, "josh@ptkarya.co.id");
+
+    // Reading asks every account, and each line says where it came from.
+    fake.events = [
+      { id: "ev-dua", status: "confirmed", summary: "Rapat vendor", start: { dateTime: `${today()}T10:00:00+07:00` }, end: { dateTime: `${today()}T11:00:00+07:00` } },
+    ];
+    fake.calls = [];
+    const at8 = new Date(`${today()}T08:00:00+07:00`);
+    const day = await calendarDays(await byWa(u.waId), at8);
+    assert.deepEqual(day!.today.map((e) => e.account).sort(), ["kantor", "pribadi"]);
+    const asked = new Set(fake.calls.filter((c) => c.method === "GET" && c.url.pathname.includes("/calendar/v3/")).map((c) => c.auth));
+    assert.deepEqual([...asked].sort(), [home, work].sort(), "both calendars were read, each with its own token");
+    const agenda = await agendaText(await byWa(u.waId), at8);
+    assert.match(agenda, /Rapat vendor _\(pribadi\)_/);
+    assert.match(agenda, /Rapat vendor _\(kantor\)_/);
+
+    fake.messages = {
+      m8: {
+        meta: {
+          id: "m8",
+          threadId: "t8",
+          labelIds: ["UNREAD", "IMPORTANT", "INBOX"],
+          snippet: "Soal cuti",
+          internalDate: String(Date.now() - 1_800_000),
+          payload: { mimeType: "text/plain", headers: [{ name: "From", value: "HR <hr@ptkarya.co.id>" }, { name: "Subject", value: "Form cuti" }], body: {} },
+        },
+        attachments: {},
+      },
+    };
+    const mail = await importantMail(await byWa(u.waId));
+    assert.deepEqual(mail.filter((l) => l.startsWith("•")).sort(), ["• HR: Form cuti _(kantor)_", "• HR: Form cuti _(pribadi)_"]);
+
+    // A tool call can name an account, and an account that does not exist is never quietly swapped for another.
+    const named = await runTool({ user: await byWa(u.waId) }, "calendar_events", { account: "kantor" });
+    assert.match(String(named.content), /Rapat vendor/);
+    const nowhere = await runTool({ user: await byWa(u.waId) }, "calendar_events", { account: "akun bank" });
+    assert.equal(nowhere.isError, true);
+    assert.match(String(nowhere.content), /josh@ptkarya\.co\.id/, "the reply says which accounts do exist");
+
+    // A message written on the work account goes out from it, even though the personal one is still the default.
+    fake.sent = [];
+    await say(u.waId, 'tool gmail_send {"account":"kantor","to":["hr@ptkarya.co.id"],"subject":"Cuti","body":"Halo HR"}');
+    const question = last(u.waId);
+    assert.match(question.text!, /Kirim email di atas dari josh@ptkarya\.co\.id\?/);
+    await tap(u.waId, question.buttons![0]!.id);
+    assert.equal(fake.sent.length, 1);
+    assert.equal(fake.calls.filter((c) => c.url.pathname.endsWith("/messages/send")).at(-1)!.auth, work);
+
+    const listed = await runTool({ user: await byWa(u.waId) }, "google_accounts", { action: "list" });
+    assert.match(String(listed.content), /"nama":"kantor"/);
+    const moved = await runTool({ user: await byWa(u.waId) }, "google_accounts", { action: "primary", account: "kantor" });
+    assert.match(String(moved.content), /josh@ptkarya\.co\.id/);
+    assert.equal((await getAccount(u.id))?.email, "josh@ptkarya.co.id", "the default moved");
+
+    // One login going stale leaves the other readable, and the warning says which one to fix.
+    await sql`update google_accounts set status = 'expired' where user_id = ${u.id} and email = 'josh@ptkarya.co.id'`;
+    const half = await calendarDays(await byWa(u.waId), at8);
+    assert.deepEqual(half!.today.map((e) => e.account), ["pribadi"]);
+    assert.match(half!.note!, /akun kantor tidak bisa dibaca karena login kedaluwarsa/);
+
+    await say(u.waId, "koneksi");
+    const menu = last(u.waId);
+    assert.match(menu.text!, /Google: ✅ josh@gmail\.com \(pribadi\)/);
+    assert.match(menu.text!, /Google: ⚠️ josh@ptkarya\.co\.id \(kantor, utama\), login kedaluwarsa\./);
+    assert.deepEqual(menu.buttons!.map((b) => b.id), [
+      "conn:google:relogin:josh@ptkarya.co.id",
+      "conn:google:add",
+      "conn:google:disconnect:josh@ptkarya.co.id",
+      "conn:google:disconnect:josh@gmail.com",
+    ]);
+
+    assert.equal((await runTool({ user: await byWa(u.waId) }, "google_disconnect", {})).isError, true, "with two accounts, which one is a question");
+    const removed = await disconnect(u.id, "josh@ptkarya.co.id");
+    assert.deepEqual(removed.map((a) => a.email), ["josh@ptkarya.co.id"]);
+    assert.deepEqual(
+      (await listAccounts(u.id)).map((a) => [a.email, a.isPrimary]),
+      [["josh@gmail.com", true]],
+      "the account left behind becomes the default",
+    );
   });
 });

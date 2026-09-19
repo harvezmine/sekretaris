@@ -38,7 +38,7 @@ yang berlaku untuk kedua jalur.
 Transkrip video tidak tersedia lewat API resmi kecuali videonya milik pengguna sendiri, jadi "ringkas video ini"
 belum bisa dijanjikan; "carikan video tentang ini" bisa.
 
-## Dua hal yang perlu diketahui
+## Yang perlu diketahui
 
 **Google Tasks hanya menyimpan tanggal, bukan jam.** API-nya membuang bagian jam dari tenggat. Karena itu pengingat
 tetap milik Milo sendiri (lengkap dengan jamnya), sedangkan Tasks dipakai untuk pekerjaan yang cukup "hari ini".
@@ -49,6 +49,21 @@ dibuka pembuatnya. Milo otomatis menerbitkannya (`setPublishSettings`) lalu memb
 `role: reader, type: anyone, view: published`. Kalau langkah izin itu ditolak Google, Milo memberi tahu bahwa
 linknya mungkin belum bisa dibuka orang lain, bukan diam-diam mengirim link yang rusak. Milo hanya bisa membaca
 formulir yang ia buat sendiri.
+
+**Satu pengguna boleh punya lebih dari satu akun Google.** Biasanya satu pribadi dan satu kantor. Akun pertama
+yang dihubungkan menjadi **akun utama**, dan semua perintah memakai akun itu selama pengguna tidak menyebut yang
+lain. Menambah akun: **KONEKSI → Tambah akun Google**, lalu pilih alamat yang berbeda di halaman Google (Milo
+selalu menampilkan pemilih akun, jadi akun lama tidak tertimpa).
+
+Aturannya sederhana: **membaca menyapu semua akun, mengirim tidak pernah menebak.** Agenda, email penting, tugas,
+dan pencarian kontak digabung dari semua akun dan diberi label akunnya kalau ada lebih dari satu. Untuk mengirim
+email, membuat undangan, atau menghapus acara, Milo memakai akun yang disebut pengguna; kalau tidak jelas, ia
+bertanya dulu. Email yang sudah disiapkan terkunci pada akun tempat ia ditulis, walaupun akun utama berubah
+sebelum tombol Kirim ditekan.
+
+Pengguna bisa berkata "namai akun ini kantor" atau "pakai email kantor sebagai utama", dan bisa memutus satu akun
+saja lewat **KONEKSI**. Kalau login satu akun kedaluwarsa, akun yang lain tetap jalan dan peringatannya menyebut
+akun mana yang perlu login ulang.
 
 **Tidak ada yang terkirim atau terhapus tanpa persetujuan pengguna.** Mengirim email, mengirim undangan kalender,
 dan menghapus acara selalu menunggu pengguna menekan tombol konfirmasi di WhatsApp. Tombol itu ditangani Milo

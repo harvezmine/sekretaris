@@ -216,10 +216,26 @@ export function connectLink(url: string | undefined, labels: string[], minutes: 
   ].join("\n");
 }
 
-export function googleConnected(email: string | null, granted: string[], missing: string[], examples: string[]): string {
+export function googleConnected(
+  email: string | null,
+  granted: string[],
+  missing: string[],
+  examples: string[],
+  extra: { added?: boolean; accounts?: number; primary?: string } = {},
+): string {
+  const second = (extra.accounts ?? 1) > 1;
+  const head = second
+    ? `${extra.added ? "Akun ini ditambahkan" : "Akun ini tersambung lagi"}${email ? ` (${email})` : ""}, untuk ${granted.length ? granted.join(", ") : "belum ada layanan"}. Akun lama tetap ada.`
+    : `Google Anda sudah tersambung${email ? ` (${email})` : ""}, untuk ${granted.length ? granted.join(", ") : "belum ada layanan"}.`;
   return [
-    `Google Anda sudah tersambung${email ? ` (${email})` : ""}, untuk ${granted.length ? granted.join(", ") : "belum ada layanan"}.`,
+    head,
     ...(missing.length ? [`⚠️ ${missing.join(", ")} belum diizinkan. Ketik *KONEKSI*, lalu centang semua izin saat login.`] : []),
+    ...(second && extra.primary
+      ? [
+          "",
+          `Kalau Anda tidak menyebut akunnya, saya pakai ${extra.primary}. Sebut saja akunnya kalau mau yang lain, misalnya _cek email di ${email ?? "akun satunya"}_, atau bilang _pakai ${email ?? "akun ini"} sebagai utama_.`,
+        ]
+      : []),
     ...(examples.length ? ["", "Sekarang Anda bisa minta, misalnya:", ...examples.map((e) => `• _${e}_`)] : []),
   ].join("\n");
 }
@@ -247,8 +263,14 @@ export function notionLink(url: string | undefined, minutes: number): string {
   ].join("\n");
 }
 
-export function googleExpired(url: string): string {
-  return `⚠️ Login Google Anda sudah kedaluwarsa, jadi saya belum bisa membaca kalender, email, atau Drive. Login ulang lewat link ini (berlaku 30 menit):\n${url}`;
+export function googleDisconnected(emails: string[]): string {
+  const what = emails.length === 1 ? `Akun *${emails[0]}*` : `${emails.length} akun Google`;
+  return `${what} sudah diputus dan akses saya dicabut. Hubungkan lagi kapan saja lewat *KONEKSI*.`;
+}
+
+export function googleExpired(url: string, email?: string): string {
+  const which = email ? ` untuk *${email}*` : "";
+  return `⚠️ Login Google Anda${which} sudah kedaluwarsa, jadi saya belum bisa membaca kalender, email, atau Drive. Login ulang lewat link ini (berlaku 30 menit):\n${url}`;
 }
 
 export const CONNECT_TEXT = {

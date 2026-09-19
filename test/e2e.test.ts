@@ -19,17 +19,19 @@ const SECRET = "test-app-secret";
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
 let seq = 0;
+// A run of its own: the same wamid twice is a duplicate to Milo, and rows from an earlier run share this database.
+const run = Math.random().toString(36).slice(2, 8);
 const now = () => String(Math.floor(Date.now() / 1000));
-const text = (from: string, body: string) => ({ id: `wamid.t${++seq}`, from, timestamp: now(), type: "text", text: { body } });
+const text = (from: string, body: string) => ({ id: `wamid.t${run}-${++seq}`, from, timestamp: now(), type: "text", text: { body } });
 const button = (from: string, id: string, title = id) => ({
-  id: `wamid.b${++seq}`,
+  id: `wamid.b${run}-${++seq}`,
   from,
   timestamp: now(),
   type: "interactive",
   interactive: { type: "button_reply", button_reply: { id, title } },
 });
 const doc = (from: string, mediaId: string, filename: string, caption?: string) => ({
-  id: `wamid.d${++seq}`,
+  id: `wamid.d${run}-${++seq}`,
   from,
   timestamp: now(),
   type: "document",
@@ -340,7 +342,7 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
 
     await send(u, [
       {
-        id: `wamid.c${++seq}`,
+        id: `wamid.c${run}-${++seq}`,
         from: u,
         timestamp: now(),
         type: "contacts",
@@ -351,10 +353,10 @@ describe("Milo end to end", { skip: !enabled && "set TEST_DATABASE_URL to run" }
     const [contact] = await sql<{ phone: string }[]>`select phone from contacts where user_id = ${user.id}`;
     assert.equal(contact!.phone, "6281212345678");
 
-    await send(u, [{ id: `wamid.v${++seq}`, from: u, timestamp: now(), type: "audio", audio: { id: "m-voice", voice: true } }]);
+    await send(u, [{ id: `wamid.v${run}-${++seq}`, from: u, timestamp: now(), type: "audio", audio: { id: "m-voice", voice: true } }]);
     assert.match(lastOut(u)!.text!, /Pesan suara belum bisa saya dengarkan/);
 
-    await send(u, [{ id: `wamid.s${++seq}`, from: u, timestamp: now(), type: "sticker", sticker: { id: "x" } }]);
+    await send(u, [{ id: `wamid.s${run}-${++seq}`, from: u, timestamp: now(), type: "sticker", sticker: { id: "x" } }]);
     assert.equal(lastOut(u)!.text, "Yang ini belum bisa saya buka. Boleh dikirim sebagai teks?");
   });
 

@@ -329,4 +329,24 @@ create table if not exists routine_log (
 );
 
 alter table oauth_states add column if not exists provider text not null default 'google';
+
+-- More than one Google account per user: the key widens from the user to the user and the address. The account
+-- that was already there becomes their primary, so nothing a connected user has is lost.
+alter table google_accounts add column if not exists label text;
+alter table google_accounts add column if not exists is_primary boolean not null default true;
+update google_accounts set email = concat('akun-', user_id, '@belum-diketahui') where email is null;
+alter table google_accounts alter column email set not null;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'google_accounts'::regclass and contype = 'p' and array_length(conkey, 1) = 2
+  ) then
+    alter table google_accounts drop constraint if exists google_accounts_pkey;
+    alter table google_accounts add primary key (user_id, email);
+  end if;
+end
+$$;
+-- One primary at a time, enforced by the database rather than by remembering to.
+create unique index if not exists google_accounts_primary_idx on google_accounts (user_id) where is_primary;
 `;

@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import { getUser, sql, type UserRow } from "../db/index.js";
-import { googleEnabled, servicesGranted } from "../google/client.js";
+import { googleEnabled, listAccounts, servicesGranted } from "../google/client.js";
 import { connectUrlFor } from "../google/connect.js";
 import { BTN, googleExpired, trialNudge } from "../onboarding/copy.js";
 import type { Agent } from "../agent/run.js";
@@ -123,18 +123,20 @@ export class Scheduler {
   /** Google refuses a refresh token (weekly in Testing mode): tell the user once, with a link to sign in again. */
   async notifyExpiredGoogle(): Promise<void> {
     if (!googleEnabled()) return;
-    const expired = await sql<{ userId: string; scopes: string[] }[]>`
-      select user_id, scopes from google_accounts where status = 'expired' and expired_notified_at is null limit 50
+    const expired = await sql<{ userId: string; email: string; scopes: string[] }[]>`
+      select user_id, email, scopes from google_accounts where status = 'expired' and expired_notified_at is null limit 50
     `;
     for (const row of expired) {
       const user = await getUser(row.userId);
       const skip = !user || user.state === "OPTED_OUT" || !hasAccess(user) || !insideWindow(user, this.outbox.wa.serviceWindow);
       const url = skip ? undefined : connectUrlFor(row.userId, servicesGranted(row.scopes));
       if (!skip && !url) continue;
-      await sql`update google_accounts set expired_notified_at = now() where user_id = ${row.userId}`;
+      // Per account: marking every row would silence the notice for an account that expires later.
+      await sql`update google_accounts set expired_notified_at = now() where user_id = ${row.userId} and email = ${row.email}`;
       if (!user || !url) continue;
+      const others = await listAccounts(row.userId);
       try {
-        await this.outbox.text(user, googleExpired(url), { raw: true });
+        await this.outbox.text(user, googleExpired(url, others.length > 1 ? row.email : undefined), { raw: true });
       } catch (err) {
         this.log.warn({ err, userId: user.id }, "pemberitahuan login Google gagal dikirim");
       }
