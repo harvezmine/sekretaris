@@ -37,6 +37,7 @@ import { googleHandlers, googleInputs, googleToolDefs } from "./googleTools.js";
 import { notionHandlers, notionInputs, notionToolDefs } from "./notionTools.js";
 import { webHandlers, webInputs, webToolDefs } from "./webTools.js";
 import { DIRECTIONS_TOOL_DEF, LOCATION_LINK_TOOL_DEF, mapsHandlers, mapsInputs, mapsToolDefs } from "./mapsTools.js";
+import { addRule, forgetRule } from "../profile/rules.js";
 import { closeSessions } from "./session.js";
 
 type BetaTool = Anthropic.Beta.BetaTool;
@@ -120,6 +121,22 @@ export const TOOL_DEFS: BetaTool[] = (
         type: "object",
         properties: { fact: { type: "string" } },
         required: ["fact"],
+      },
+    },
+    {
+      name: "style_rule",
+      description: [
+        "Record how this user wants you to work, the moment they correct you: \"jangan panjang-panjang\", \"jangan pakai emoji\", \"kalau soal uang sebutkan angkanya\", \"balas pakai bahasa Inggris saja\". Write it as one short instruction to yourself, in the user's own language, e.g. \"Jawab singkat, maksimal dua kalimat\".",
+        "This is for how you behave. What is true about the user or their world is fact_remember, and their name, work, answer length and check-in times have their own fields in profile_update; use those instead of a rule when they fit.",
+        "Set forget=true with roughly the words of the rule to drop one they no longer want. Confirm in one short sentence, and never argue with a correction.",
+      ].join("\n\n"),
+      input_schema: {
+        type: "object",
+        properties: {
+          rule: { type: "string" },
+          forget: { type: "boolean" },
+        },
+        required: ["rule"],
       },
     },
     {
@@ -388,6 +405,7 @@ const inputs = {
   }),
   fact_remember: z.object({ fact: z.string().min(3).max(300) }),
   fact_forget: z.object({ query: z.string().min(2).max(100) }),
+  style_rule: z.object({ rule: z.string().min(3).max(160), forget: z.boolean().optional() }),
   profile_update: z.object({
     call_name: z.string().max(60).optional(),
     work: z.string().max(300).optional(),
@@ -636,6 +654,20 @@ const handlers: { [K in ToolName]: (ctx: ToolContext, input: z.infer<(typeof inp
     if (phone && !normalized) return fail(`Nomor "${phone}" tidak valid.`);
     const id = await saveContact(user, { name, phone: normalized, alias: alias ?? null, email: email ?? null });
     return ok({ saved: true, id: Number(id), name, alias: alias ?? null, phone: normalized });
+  },
+
+  async style_rule({ user }, { rule, forget }) {
+    if (forget) {
+      const dropped = await forgetRule(user.id, rule);
+      return dropped ? ok({ forgot: dropped.rule }) : ok(`Tidak ada aturan yang cocok dengan "${rule}".`);
+    }
+    const outcome = await addRule(user.id, rule);
+    if (!outcome) return fail("Aturannya terlalu pendek untuk disimpan.");
+    if (outcome.status === "same") return ok({ already: outcome.rule });
+    return ok({
+      [outcome.status === "replaced" ? "replaced" : "added"]: outcome.rule,
+      ...(outcome.dropped ? { instead_of: outcome.dropped } : {}),
+    });
   },
 
   async fact_remember({ user }, { fact }) {

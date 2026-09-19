@@ -291,6 +291,7 @@ src/
   admin/              laporan pemakaian dan rute admin
   uploads/            link & halaman unggah file (untuk kanal tanpa lampiran)
   notion/             OAuth Notion, halaman & database workspace pengguna, penerjemah teks ke blok
+  profile/            profil, agenda, aturan dari pengguna, dan gaya menulis yang dihitung dari pesannya
   relay/              pesan ke orang lain atas nama pengguna, konfirmasi, dan penerusan balasan
   persona/            katalog nama & kepribadian asisten
   profile/            profil pengguna, agenda hari ini, ringkasan pagi

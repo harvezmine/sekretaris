@@ -1,6 +1,7 @@
 import { ROUTINE_KINDS, ROUTINE_LABEL, routineTime } from "../routines/routines.js";
 import { sql, type UserProfile, type UserRow } from "../db/index.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona } from "../persona/catalog.js";
+import { describeStyle, styleSummary } from "./style.js";
 
 export type { UserProfile };
 
@@ -57,7 +58,7 @@ export function styleLabel(style: UserProfile["answerStyle"]): string {
 }
 
 /** Lines for the model's <user_profile> block. */
-export function profilePromptLines(user: UserRow): string[] {
+export function profilePromptLines(user: UserRow, rules: readonly string[] = []): string[] {
   const p = user.profile ?? {};
   return [
     `Address the user as: ${p.callName ? `${p.callName} (the user's choice; use it instead of your persona's default form of address)` : "(not set; use their name or \"Anda\")"}`,
@@ -70,11 +71,13 @@ export function profilePromptLines(user: UserRow): string[] {
           : "not set (keep it brief by default)"
     }`,
     `Check-ins you send on your own: ${routineSummary(p, "en")}. When they ask you to stop, move or bring one back, use profile_update.`,
+    ...(p.style ? [describeStyle(p.style)] : []),
+    ...(rules.length ? [`Rules this user has given you, newest last; they outrank your own habits: ${rules.map((r) => `"${r}"`).join("; ")}`] : []),
   ];
 }
 
 /** What the user sees when they ask what Milo knows about them. */
-export function profileSummary(user: UserRow, facts: string[]): string {
+export function profileSummary(user: UserRow, facts: string[], rules: readonly string[] = []): string {
   const p = user.profile ?? {};
   const persona = findPersona(user.persona);
   const lines = [
@@ -85,13 +88,17 @@ export function profileSummary(user: UserRow, facts: string[]): string {
     `• Sapaan otomatis: ${routineSummary(p, "id")}`,
     `• Asisten: *${user.assistantName ?? DEFAULT_ASSISTANT_NAME}*, gaya ${persona ? `${persona.label} (${persona.gender})` : "standar"}`,
   ];
+  if (p.style) lines.push(`• Gaya Anda yang saya perhatikan: ${styleSummary(p.style)}`);
+  if (rules.length) {
+    lines.push("", "*Aturan dari Anda:*", ...rules.map((r) => `• ${r}`));
+  }
   if (facts.length) {
     lines.push("", "*Yang saya ingat:*", ...facts.slice(0, 10).map((f) => `• ${f}`));
     if (facts.length > 10) lines.push(`_…dan ${facts.length - 10} lainnya_`);
   }
   lines.push(
     "",
-    "Ubah kapan saja dengan kalimat biasa, misalnya _panggil saya Pak Josh_, _jawab lebih singkat_, _sapaan pagi jam 6_, atau _tidak usah ingatkan makan siang_. Minta _lupakan …_ untuk menghapus sesuatu yang saya ingat.",
+    "Ubah kapan saja dengan kalimat biasa, misalnya _panggil saya Pak Josh_, _jawab lebih singkat_, _sapaan pagi jam 6_, atau _tidak usah ingatkan makan siang_. Minta _lupakan …_ untuk menghapus sesuatu yang saya ingat atau aturan yang tidak lagi Anda mau.",
   );
   return lines.join("\n");
 }

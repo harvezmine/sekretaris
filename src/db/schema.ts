@@ -291,6 +291,14 @@ create table if not exists relay_inbox (
 );
 create index if not exists relay_inbox_unseen_idx on relay_inbox (user_id) where seen_at is null;
 
+create table if not exists user_rules (
+  id          bigserial primary key,
+  user_id     bigint not null references users(id) on delete cascade,
+  rule        text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists user_rules_user_idx on user_rules (user_id, id);
+
 create table if not exists notion_accounts (
   user_id         bigint primary key references users(id) on delete cascade,
   workspace_id    text not null,

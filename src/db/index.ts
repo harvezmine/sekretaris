@@ -50,6 +50,17 @@ export interface UserProfile {
   routines?: Partial<Record<"morning" | "lunch" | "evening", string>>;
   /** The last location the user shared in chat, used for "near me". Removed with the rest of their data. */
   lastPlace?: { lat: number; lng: number; label?: string; at: string };
+  /** How they write, counted from their own messages rather than asked. See profile/style.ts. */
+  style?: {
+    words: number;
+    address: "anda" | "kamu" | "campur" | "unknown";
+    emoji: number;
+    slang: number;
+    lowercase: number;
+    unpunctuated: number;
+    n: number;
+    at: string;
+  };
 }
 
 export async function getUser(id: string): Promise<UserRow | undefined> {

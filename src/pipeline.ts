@@ -73,6 +73,8 @@ import { listUserServers, resolveServer } from "./servers/userServers.js";
 import { DEFAULT_ASSISTANT_NAME, findPersona, personaMenu } from "./persona/catalog.js";
 import { agendaText } from "./profile/agenda.js";
 import { normalizeCallName, normalizeWork, profileSummary, updateProfile } from "./profile/profile.js";
+import { listRules } from "./profile/rules.js";
+import { refreshStyle } from "./profile/style.js";
 import {
   activeThreadFor,
   assistantLabel,
@@ -648,6 +650,8 @@ export class Pipeline {
     );
     notes.unshift(...replyNotes, ...inboxNotes);
 
+    // Cheap and rate-limited to once every few days; it reads the user's own messages, never the model.
+    await refreshStyle(user).catch((err) => this.d.log.warn({ err, userId: user.id }, "gagal memperbarui gaya pengguna"));
     const softMode = await this.softModeFor(user);
     const messaging = messageSendFor(user.waId);
     const relayMark = messaging ? await lastRelayId(user.id) : "0";
@@ -837,7 +841,8 @@ export class Pipeline {
         return this.replyStatic(user, note, helpFor(user));
       case "profile": {
         const facts = await sql<{ fact: string }[]>`select fact from facts where user_id = ${user.id} order by id desc limit 30`;
-        await this.replyStatic(user, note, profileSummary(user, facts.map((f) => f.fact)));
+        const rules = await listRules(user.id);
+        await this.replyStatic(user, note, profileSummary(user, facts.map((f) => f.fact), rules.map((r) => r.rule)));
         await this.d.outbox.buttons(user, "Kalau ada yang tidak cocok, bilang saja. Mau saya ulang perkenalannya dari awal?", [copy.SETUP_BTN.restart]);
         return;
       }
